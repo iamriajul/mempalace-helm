@@ -80,17 +80,47 @@ helm install mempalace \
 
 ### Connect an agent
 
-After install, point any MCP-compatible agent at the SSE endpoint:
+mcp-proxy exposes two endpoints on port 8080:
+
+| Transport | Path | MCP spec version |
+|---|---|---|
+| SSE (legacy, widely supported) | `/sse` | 2024-11-05 |
+| Streamable HTTP (recommended) | `/mcp` | 2025-03-26+ |
+
+**Claude Code** (one-time setup per agent machine):
 
 ```bash
-# In-cluster (from another pod)
-claude mcp add mempalace \
-  http://mempalace.mempalace.svc.cluster.local/sse
+# 1. Get the service URL
+#    In-cluster: use the Kubernetes DNS name directly
+SERVICE_URL="http://mempalace.mempalace.svc.cluster.local"
 
-# Local testing via port-forward
+#    Outside the cluster: port-forward for local testing
 kubectl port-forward svc/mempalace 8080:80 -n mempalace
-claude mcp add mempalace http://127.0.0.1:8080/sse
+SERVICE_URL="http://127.0.0.1:8080"
+
+# 2. Register MemPalace as an MCP server in Claude Code
+claude mcp add mempalace --transport sse "${SERVICE_URL}/sse"
+
+# 3. Verify it is registered
+claude mcp list
 ```
+
+This writes the following into your Claude Code config (`~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "mempalace": {
+      "type": "sse",
+      "url": "http://mempalace.mempalace.svc.cluster.local/sse"
+    }
+  }
+}
+```
+
+On next launch Claude Code connects automatically and the 19 MemPalace tools
+(`mempalace_search`, `mempalace_add_drawer`, `mempalace_kg_query`, …) are
+available without any further configuration.
 
 ---
 
