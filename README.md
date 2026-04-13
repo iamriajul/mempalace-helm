@@ -57,19 +57,9 @@ All agents share one palace. Each agent gets its own wing and diary inside it.
 - `kubectl` connected to a cluster
 - `helm` ≥ 3.14
 
-### Install from source
+### Install
 
-```bash
-git clone https://github.com/iamriajul/mempalace-helm.git
-cd mempalace-helm
-
-helm install mempalace ./helm/mempalace \
-  --namespace mempalace --create-namespace
-```
-
-### Install from GHCR OCI
-
-The chart is public — no login required to install.
+The chart is public — no login required.
 
 ```bash
 helm install mempalace \
