@@ -63,7 +63,7 @@ The chart is public — no login required.
 
 ```bash
 helm install mempalace \
-  oci://ghcr.io/iamriajul/charts/mempalace \
+  oci://ghcr.io/iamriajul/helm-charts/mempalace \
   --version 0.1.0 \
   --namespace mempalace --create-namespace
 ```
@@ -148,10 +148,10 @@ helm package helm/mempalace --destination /tmp/helm-packages
 
 # Publish to GHCR OCI
 helm registry login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
-helm push /tmp/helm-packages/mempalace-0.1.0.tgz oci://ghcr.io/iamriajul/charts
+helm push /tmp/helm-packages/mempalace-0.1.0.tgz oci://ghcr.io/iamriajul/helm-charts
 
 # Verify
-helm pull oci://ghcr.io/iamriajul/charts/mempalace --version 0.1.0
+helm pull oci://ghcr.io/iamriajul/helm-charts/mempalace --version 0.1.0
 ```
 
 ---
@@ -249,7 +249,7 @@ helm upgrade mempalace ./helm/mempalace -f values-prod.yaml -n mempalace
 ## Upgrade notes
 
 ```bash
-helm upgrade mempalace oci://ghcr.io/iamriajul/charts/mempalace \
+helm upgrade mempalace oci://ghcr.io/iamriajul/helm-charts/mempalace \
   --version 0.2.0 --namespace mempalace --reuse-values
 ```
 
