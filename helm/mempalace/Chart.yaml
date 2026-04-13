@@ -10,8 +10,8 @@ keywords:
   - memory
   - chromadb
   - vector
-home: https://github.com/OWNER/mempalace-helm
+home: https://github.com/iamriajul/mempalace-helm
 sources:
-  - https://github.com/OWNER/mempalace-helm
+  - https://github.com/iamriajul/mempalace-helm
 maintainers:
-  - name: OWNER
+  - name: iamriajul
