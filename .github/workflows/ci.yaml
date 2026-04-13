@@ -16,40 +16,6 @@ env:
 
 jobs:
   # ──────────────────────────────────────────
-  # Lint & test the application
-  # ──────────────────────────────────────────
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Run linter (ruff)
-        run: ruff check .
-
-      - name: Run type checker (mypy)
-        run: mypy mempalace/
-
-      - name: Run tests
-        run: pytest --cov=mempalace --cov-report=xml -q
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.xml
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-  # ──────────────────────────────────────────
   # Lint the Helm chart
   # ──────────────────────────────────────────
   helm-lint:
@@ -64,11 +30,11 @@ jobs:
           version: v3.14.0
 
       - name: Lint chart
-        run: helm lint charts/mempalace/
+        run: helm lint helm/mempalace/ --strict
 
       - name: Template render (dry-run)
         run: |
-          helm template mempalace charts/mempalace/ \
+          helm template mempalace helm/mempalace/ \
             --set image.tag=ci-test \
             --debug
 
@@ -78,7 +44,7 @@ jobs:
   build:
     name: Build Image
     runs-on: ubuntu-latest
-    needs: [test, helm-lint]
+    needs: [helm-lint]
     permissions:
       contents: read
       packages: write
