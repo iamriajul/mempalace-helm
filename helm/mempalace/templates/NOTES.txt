@@ -1,0 +1,49 @@
+MemPalace has been deployed successfully!
+
+Release:   {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Version:   {{ .Chart.AppVersion }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Accessing MemPalace
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+Run these commands to forward the service port to your local machine:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} \
+    -l "app.kubernetes.io/name={{ include "mempalace.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" \
+    -o jsonpath="{.items[0].metadata.name}")
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.service.targetPort }}
+
+Then open: http://127.0.0.1:8080
+{{- end }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Notes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{{- if .Values.persistence.enabled }}
+  Persistence: ENABLED
+  Palace PVC:  {{ include "mempalace.palacePvcName" . }} ({{ .Values.persistence.palace.size }})
+  Chroma PVC:  {{ include "mempalace.chromaPvcName" . }} ({{ .Values.persistence.chroma.size }})
+
+  Both PVCs have helm.sh/resource-policy: keep – they survive helm uninstall.
+  To delete them manually:
+    kubectl delete pvc {{ include "mempalace.palacePvcName" . }} {{ include "mempalace.chromaPvcName" . }} -n {{ .Release.Namespace }}
+{{- else }}
+  Persistence: DISABLED (data will be lost on pod restart)
+{{- end }}
+
+{{- if .Values.auth.enabled }}
+  Auth:        ENABLED  (AUTH_TOKEN injected from Secret)
+{{- else }}
+  Auth:        DISABLED  (set auth.enabled=true and auth.token=<token> to enable)
+{{- end }}
+
+  Replicas: {{ .Values.replicaCount }} (keep at 1 – see README for details)

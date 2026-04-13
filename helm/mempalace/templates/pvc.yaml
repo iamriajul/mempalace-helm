@@ -1,0 +1,41 @@
+{{- if .Values.persistence.enabled -}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mempalace.palacePvcName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mempalace.labels" . | nindent 4 }}
+  annotations:
+    # Retain PVC on helm uninstall to prevent accidental data loss.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.palace.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.palace.size }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mempalace.chromaPvcName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mempalace.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.chroma.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.chroma.size }}
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+{{- end }}

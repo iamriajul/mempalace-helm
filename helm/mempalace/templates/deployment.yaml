@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mempalace.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mempalace.labels" . | nindent 4 }}
+spec:
+  # Do NOT increase replicas without migrating Chroma to an external server.
+  # See values.yaml and README for details.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mempalace.selectorLabels" . | nindent 6 }}
+  strategy:
+    # Recreate avoids two pods competing for the same PVC mount when
+    # accessMode is ReadWriteOnce (the default).
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "mempalace.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mempalace.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mempalace
+          image: {{ include "mempalace.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "mempalace.fullname" . }}
+          env:
+            {{- if .Values.auth.enabled }}
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mempalace.authSecretName" . }}
+                  key: token
+            {{- end }}
+            {{- with .Values.env.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: palace-data
+              mountPath: {{ .Values.config.palaceDataPath }}
+            - name: chroma-data
+              mountPath: {{ .Values.config.chromaDataPath }}
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: palace-data
+          persistentVolumeClaim:
+            claimName: {{ include "mempalace.palacePvcName" . }}
+        - name: chroma-data
+          persistentVolumeClaim:
+            claimName: {{ include "mempalace.chromaPvcName" . }}
+        {{- else }}
+        - name: palace-data
+          emptyDir: {}
+        - name: chroma-data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

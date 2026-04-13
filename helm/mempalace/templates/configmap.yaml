@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mempalace.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mempalace.labels" . | nindent 4 }}
+data:
+  PALACE_DATA_PATH: {{ .Values.config.palaceDataPath | quote }}
+  CHROMA_DATA_PATH: {{ .Values.config.chromaDataPath | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  PORT: {{ .Values.service.targetPort | toString | quote }}

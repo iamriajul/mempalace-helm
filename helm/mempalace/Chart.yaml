@@ -1,0 +1,17 @@
+apiVersion: v2
+name: mempalace
+description: Helm chart for MemPalace – an AI-powered memory palace application backed by ChromaDB
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - mempalace
+  - ai
+  - memory
+  - chromadb
+  - vector
+home: https://github.com/OWNER/mempalace-helm
+sources:
+  - https://github.com/OWNER/mempalace-helm
+maintainers:
+  - name: OWNER

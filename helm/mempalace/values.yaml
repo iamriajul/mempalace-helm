@@ -1,0 +1,147 @@
+# Default values for mempalace.
+# Override any of these in a custom values file or with --set.
+
+# ── Replica count ─────────────────────────────────────────────────────────────
+# Keep at 1.  MemPalace embeds ChromaDB in-process and writes directly to the
+# local filesystem.  Running multiple replicas against the same PVC leads to
+# data corruption.  If you need horizontal scale, run a dedicated external
+# Chroma server and update CHROMA_HOST/CHROMA_PORT accordingly.
+replicaCount: 1
+
+# ── Image ─────────────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/OWNER/mempalace
+  # Defaults to the chart appVersion when left empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ── Name overrides ────────────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Service account ───────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  annotations: {}
+  # Defaults to the fullname of the release when left empty.
+  name: ""
+
+# ── Pod metadata ──────────────────────────────────────────────────────────────
+podAnnotations: {}
+podLabels: {}
+
+# ── Security contexts ─────────────────────────────────────────────────────────
+podSecurityContext:
+  # fsGroup ensures mounted PVC files are owned by the mempalace user (uid 1000).
+  fsGroup: 1000
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false   # ChromaDB writes to temp dirs at runtime
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# ── Service ───────────────────────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  annotations: {}
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: mempalace.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: mempalace-tls
+  #   hosts:
+  #     - mempalace.example.com
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# ── Persistence ───────────────────────────────────────────────────────────────
+persistence:
+  enabled: true
+  # Leave empty to use the cluster default StorageClass.
+  storageClass: ""
+  palace:
+    size: 1Gi
+    accessModes:
+      - ReadWriteOnce
+  chroma:
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+auth:
+  # Set enabled: true to mount an AUTH_TOKEN env var into the container.
+  enabled: false
+  # If existingSecret is set, the chart uses that Secret instead of creating one.
+  # The Secret must have a key named "token".
+  existingSecret: ""
+  # Plaintext token – only used when existingSecret is empty.
+  # In production, pass this via --set auth.token=... or a sealed secret.
+  token: ""
+
+# ── Application configuration ─────────────────────────────────────────────────
+config:
+  palaceDataPath: /data/palace
+  chromaDataPath: /data/chroma
+  # Log level: debug | info | warning | error
+  logLevel: info
+
+# ── Extra environment variables ───────────────────────────────────────────────
+# Injected verbatim into the container spec.
+# Example:
+#   extraEnv:
+#     - name: OPENAI_API_KEY
+#       valueFrom:
+#         secretKeyRef:
+#           name: openai-secret
+#           key: api-key
+env:
+  extraEnv: []
+
+# ── Probes ────────────────────────────────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
