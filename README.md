@@ -120,6 +120,32 @@ available without any further configuration.
 
 ---
 
+## Quick run with Docker
+
+No Kubernetes? Run MemPalace locally with a single command:
+
+```bash
+docker run -d \
+  --name mempalace \
+  -p 8080:8080 \
+  -v mempalace-data:/data \
+  ghcr.io/iamriajul/mempalace:latest
+```
+
+Then register it in Claude Code:
+
+```bash
+# Streamable HTTP (recommended)
+claude mcp add mempalace --transport http http://127.0.0.1:8080/mcp
+
+# Legacy SSE
+# claude mcp add mempalace --transport sse http://127.0.0.1:8080/sse
+```
+
+Data is persisted in the `mempalace-data` Docker volume across container restarts.
+
+---
+
 ## Building and pushing the image
 
 The Dockerfile installs MemPalace and mcp-proxy from PyPI — no application
@@ -134,7 +160,7 @@ docker login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
 docker push ghcr.io/iamriajul/mempalace:local
 ```
 
-The CI workflow (`.github/workflows/image.yml`) triggers on push to `main` and
+The CI workflow (`.github/workflows/image.yml`) triggers on push to `master` and
 on `v*.*.*` tags. BuildKit registry cache is stored in GHCR — no extra storage
 needed.
 
