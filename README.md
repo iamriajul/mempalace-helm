@@ -159,44 +159,46 @@ MemPalace ships two Claude Code hook scripts that make memory saving **automatic
 
 **These hooks work with remote MCP** — they only produce the block decision; the actual saves go through the MCP tools connected to your remote pod. You do **not** need `mempalace` installed locally (leave `MEMPAL_DIR` empty in the scripts).
 
-### Setup
+### One-command setup (recommended)
+
+This repo ships a Claude Code command that does everything automatically — downloads the hook scripts, registers the MCP server, and wires up `settings.local.json` in one shot.
+
+**First, add the command to Claude Code** (once per machine):
 
 ```bash
-# Download the hook scripts once per agent machine
-mkdir -p ~/.mempalace/hooks
-curl -o ~/.mempalace/hooks/mempal_save_hook.sh \
-  https://raw.githubusercontent.com/MemPalace/mempalace/main/hooks/mempal_save_hook.sh
-curl -o ~/.mempalace/hooks/mempal_precompact_hook.sh \
-  https://raw.githubusercontent.com/MemPalace/mempalace/main/hooks/mempal_precompact_hook.sh
-chmod +x ~/.mempalace/hooks/*.sh
+mkdir -p ~/.claude/commands
+curl -fsSL -o ~/.claude/commands/mempalace-connect.md \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/.claude/commands/mempalace-connect.md
 ```
 
-Add to `~/.claude/settings.local.json` (or `.claude/settings.local.json` per project):
+**Then run it inside any Claude Code session:**
+
+```
+/mempalace-connect http://mempalace.mempalace.svc.cluster.local
+```
+
+That's it. Claude downloads the hooks, registers `/mcp`, updates `settings.local.json`, and confirms everything is wired up. Restart Claude Code and auto-saves are active.
+
+### Manual setup
+
+If you prefer to configure things yourself, see the [hook scripts](https://github.com/MemPalace/mempalace/tree/main/hooks) in the upstream repo and add the following to `~/.claude/settings.local.json`:
 
 ```json
 {
   "hooks": {
     "Stop": [{
       "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "/absolute/path/to/.mempalace/hooks/mempal_save_hook.sh",
-        "timeout": 30
-      }]
+      "hooks": [{"type": "command", "command": "/HOME/.mempalace/hooks/mempal_save_hook.sh", "timeout": 30}]
     }],
     "PreCompact": [{
       "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "/absolute/path/to/.mempalace/hooks/mempal_precompact_hook.sh",
-        "timeout": 30
-      }]
+      "hooks": [{"type": "command", "command": "/HOME/.mempalace/hooks/mempal_precompact_hook.sh", "timeout": 30}]
     }]
   }
 }
 ```
 
-Make sure the MCP server is registered first (see [Connect an agent](#connect-an-agent)), then Claude will save automatically every 15 messages and before every context compaction.
+Replace `/HOME` with your actual home directory path.
 
 ---
 
