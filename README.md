@@ -69,9 +69,9 @@ helm install mempalace ./helm/mempalace \
 
 ### Install from GHCR OCI
 
-```bash
-helm registry login ghcr.io --username YOUR_GITHUB_USER --password YOUR_PAT
+The chart is public — no login required to install.
 
+```bash
 helm install mempalace \
   oci://ghcr.io/iamriajul/charts/mempalace \
   --version 0.1.0 \
