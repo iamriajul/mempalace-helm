@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mempalace.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mempalace.labels" . | nindent 4 }}
+data:
+  # Consumed by MempalaceConfig; also passed via --palace CLI arg in the CMD.
+  MEMPALACE_PALACE_PATH: {{ .Values.config.palacePath | quote }}

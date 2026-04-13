@@ -1,0 +1,29 @@
+{
+  "categories": [
+    {
+      "title": "## Features",
+      "labels": ["feat", "feature"]
+    },
+    {
+      "title": "## Bug Fixes",
+      "labels": ["fix", "bug"]
+    },
+    {
+      "title": "## Maintenance",
+      "labels": ["chore", "docs", "refactor", "ci"]
+    }
+  ],
+  "template": "#{{CHANGELOG}}\n\n**Full Changelog**: #{{RELEASE_DIFF}}",
+  "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
+  "empty_template": "- No changes",
+  "label_extractor": [
+    {
+      "pattern": "^(feat|fix|chore|docs|refactor|ci|test)(\\(.+\\))?:",
+      "target": "$1",
+      "method": "match"
+    }
+  ],
+  "sort": "ASC",
+  "max_pull_requests": 100,
+  "max_back_track_time_days": 365
+}

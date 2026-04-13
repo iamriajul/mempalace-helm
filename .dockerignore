@@ -1,0 +1,9 @@
+# MemPalace is installed from PyPI — no application source is copied.
+# This file exists to keep the build context minimal regardless.
+.git
+.github
+helm/
+tmp/
+*.md
+.env
+.env.*
