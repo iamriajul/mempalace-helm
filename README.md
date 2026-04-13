@@ -16,9 +16,9 @@ which bridges the stdio server to SSE/Streamable-HTTP. This lets multiple AI
 agents connect to a **single shared pod** over the network:
 
 ```
-Agent A ──SSE──┐
-Agent B ──SSE──┤──► mcp-proxy :8080 ──stdio──► mempalace.mcp_server
-Agent C ──SSE──┘                                      │
+Agent A ──HTTP /mcp──┐
+Agent B ──HTTP /mcp──┤──► mcp-proxy :8080 ──stdio──► mempalace.mcp_server
+Agent C ──SSE  /sse──┘                                      │
                                               /data/palace/
                                         (ChromaDB + knowledge graph
                                            + palace YAML + WAL)
@@ -89,7 +89,11 @@ kubectl port-forward svc/mempalace 8080:80 -n mempalace
 SERVICE_URL="http://127.0.0.1:8080"
 
 # 2. Register MemPalace as an MCP server in Claude Code
-claude mcp add mempalace --transport sse "${SERVICE_URL}/sse"
+#    Recommended: Streamable HTTP (MCP spec 2025-03-26+)
+claude mcp add mempalace --transport http "${SERVICE_URL}/mcp"
+
+#    Legacy SSE (if your client doesn't support Streamable HTTP yet)
+#    claude mcp add mempalace --transport sse "${SERVICE_URL}/sse"
 
 # 3. Verify it is registered
 claude mcp list
@@ -101,12 +105,14 @@ This writes the following into your Claude Code config (`~/.claude.json`):
 {
   "mcpServers": {
     "mempalace": {
-      "type": "sse",
-      "url": "http://mempalace.mempalace.svc.cluster.local/sse"
+      "type": "http",
+      "url": "http://mempalace.mempalace.svc.cluster.local/mcp"
     }
   }
 }
 ```
+
+> **SSE fallback:** replace `type: http` / `/mcp` with `type: sse` / `/sse` for older clients.
 
 On next launch Claude Code connects automatically and the 19 MemPalace tools
 (`mempalace_search`, `mempalace_add_drawer`, `mempalace_kg_query`, …) are
@@ -240,7 +246,9 @@ ingress:
 ```bash
 helm upgrade mempalace ./helm/mempalace -f values-prod.yaml -n mempalace
 
-# Agents connect to:
+# Agents connect to (Streamable HTTP, recommended):
+#   https://mempalace.example.com/mcp
+# Legacy SSE:
 #   https://mempalace.example.com/sse
 ```
 
