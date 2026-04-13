@@ -5,26 +5,36 @@ Namespace: {{ .Release.Namespace }}
 Version:   {{ .Chart.AppVersion }}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Connecting AI agents (SSE endpoint)
+ Connecting AI agents
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Both transports are available on port {{ .Values.service.port }}:
+  /mcp  — Streamable HTTP (MCP spec 2025-03-26+, recommended)
+  /sse  — SSE legacy (MCP spec 2024-11-05, wide client support)
+
 {{- if .Values.ingress.enabled }}
-External SSE URL:
+External URLs:
 {{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/sse
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/mcp   ← recommended
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/sse   ← legacy
 {{- end }}
 {{- else }}
-In-cluster SSE URL (from agent pods in any namespace):
-  http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
+In-cluster base URL (from agent pods in any namespace):
+  http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
 
 To test from your local machine, port-forward first:
   kubectl --namespace {{ .Release.Namespace }} port-forward \
     svc/{{ include "mempalace.fullname" . }} 8080:{{ .Values.service.port }}
-  # then connect to: http://127.0.0.1:8080/sse
+  # then connect to: http://127.0.0.1:8080/mcp  (or /sse)
 {{- end }}
 
-Configure an MCP client to point at the SSE URL above, e.g.:
-  claude mcp add mempalace http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
+Configure Claude Code (Streamable HTTP, recommended):
+  claude mcp add mempalace --transport http \
+    http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp
+
+Legacy SSE fallback:
+  claude mcp add mempalace --transport sse \
+    http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Storage
