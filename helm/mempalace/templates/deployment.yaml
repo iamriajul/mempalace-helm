@@ -6,15 +6,14 @@ metadata:
   labels:
     {{- include "mempalace.labels" . | nindent 4 }}
 spec:
-  # Do NOT increase replicas without migrating Chroma to an external server.
-  # See values.yaml and README for details.
+  # Keep at 1 — mcp-proxy owns one MemPalace subprocess with an exclusive
+  # ChromaDB connection.  See values.yaml for details.
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "mempalace.selectorLabels" . | nindent 6 }}
   strategy:
-    # Recreate avoids two pods competing for the same PVC mount when
-    # accessMode is ReadWriteOnce (the default).
+    # Recreate prevents two pods mounting the same ReadWriteOnce PVC simultaneously.
     type: Recreate
   template:
     metadata:
@@ -48,17 +47,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "mempalace.fullname" . }}
+          {{- with .Values.env.extraEnv }}
           env:
-            {{- if .Values.auth.enabled }}
-            - name: AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mempalace.authSecretName" . }}
-                  key: token
-            {{- end }}
-            {{- with .Values.env.extraEnv }}
             {{- toYaml . | nindent 12 }}
-            {{- end }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
@@ -66,26 +58,16 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            {{- if .Values.persistence.enabled }}
-            - name: palace-data
-              mountPath: {{ .Values.config.palaceDataPath }}
-            - name: chroma-data
-              mountPath: {{ .Values.config.chromaDataPath }}
-            {{- end }}
+            - name: data
+              mountPath: /data
       volumes:
-        {{- if .Values.persistence.enabled }}
-        - name: palace-data
+        - name: data
+          {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "mempalace.palacePvcName" . }}
-        - name: chroma-data
-          persistentVolumeClaim:
-            claimName: {{ include "mempalace.chromaPvcName" . }}
-        {{- else }}
-        - name: palace-data
+            claimName: {{ include "mempalace.dataPvcName" . }}
+          {{- else }}
           emptyDir: {}
-        - name: chroma-data
-          emptyDir: {}
-        {{- end }}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

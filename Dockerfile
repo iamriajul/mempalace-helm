@@ -1,58 +1,67 @@
 # ──────────────────────────────────────────────
 # Stage 1 – build
 # ──────────────────────────────────────────────
+# MemPalace is published to PyPI (pip install mempalace).
+# This repo does not contain the application source — only the packaging.
 FROM python:3.11-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-# Install build dependencies (gcc for compiled extensions used by chromadb)
+# gcc / g++ are required for chromadb's compiled extensions (hnswlib).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc g++ build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Pin a specific MemPalace release via build-arg; defaults to latest.
+# docker build --build-arg MEMPALACE_VERSION=3.1.0 .
+ARG MEMPALACE_VERSION=
+RUN if [ -n "$MEMPALACE_VERSION" ]; then \
+        pip install --no-cache-dir --prefix=/install \
+            "mempalace==${MEMPALACE_VERSION}" mcp-proxy; \
+    else \
+        pip install --no-cache-dir --prefix=/install \
+            mempalace mcp-proxy; \
+    fi
 
 # ──────────────────────────────────────────────
 # Stage 2 – runtime
 # ──────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
-LABEL org.opencontainers.image.source="https://github.com/OWNER/mempalace-helm"
-LABEL org.opencontainers.image.description="MemPalace – AI-powered memory palace application"
+LABEL org.opencontainers.image.source="https://github.com/iamriajul/mempalace-helm"
+LABEL org.opencontainers.image.description="MemPalace MCP server exposed over SSE via mcp-proxy"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PORT=8080 \
-    # Default data paths – overridden by Helm ConfigMap in Kubernetes
-    PALACE_DATA_PATH=/data/palace \
-    CHROMA_DATA_PATH=/data/chroma
+    PYTHONUNBUFFERED=1
 
-WORKDIR /app
+# /data is the single PVC mount point.
+#   /data/palace  → ChromaDB + knowledge_graph.sqlite3 + palace YAML files
+#   /data/.mempalace/wal → write-ahead log (HOME is set to /data)
+# Setting HOME=/data ensures expanduser("~/.mempalace") resolves inside the PVC.
+ENV HOME=/data
 
-# Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application source
-COPY . .
-
-# Non-root user for security.
-# Data dirs are created here for local/Docker Compose runs; in Kubernetes
-# they are replaced by PVC mounts (fsGroup in podSecurityContext handles ownership).
-RUN addgroup --system mempalace \
-    && adduser --system --ingroup mempalace mempalace \
-    && mkdir -p /data/palace /data/chroma \
-    && chown -R mempalace:mempalace /app /data
+# Non-root user.  In Kubernetes, podSecurityContext.fsGroup=1000 handles
+# PVC ownership so the process can write to the mounted volume.
+RUN addgroup --system --gid 1000 mempalace \
+    && adduser --system --uid 1000 --gid 1000 --no-create-home mempalace \
+    && mkdir -p /data/palace \
+    && chown -R mempalace:mempalace /data
 
 USER mempalace
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/healthz')" || exit 1
-
-# Single worker – MemPalace uses in-process Chroma which is not safe to share
-# across workers without an external Chroma server.  See README for details.
-CMD ["python", "-m", "uvicorn", "mempalace.main:app", \
-     "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+# mcp-proxy bridges the stdio MemPalace MCP server to SSE/Streamable-HTTP so
+# multiple AI agents can connect to a single pod over the network.
+# --pass-environment forwards all container env vars (MEMPALACE_PALACE_PATH,
+# etc.) into the spawned mempalace subprocess.
+CMD ["mcp-proxy", \
+     "--host", "0.0.0.0", \
+     "--port", "8080", \
+     "--pass-environment", \
+     "--", \
+     "python", "-m", "mempalace.mcp_server", \
+     "--palace", "/data/palace"]

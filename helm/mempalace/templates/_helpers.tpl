@@ -72,27 +72,8 @@ Falls back to .Chart.AppVersion when values.image.tag is empty.
 {{- end }}
 
 {{/*
-Name of the auth Secret.
-Returns existingSecret when set, otherwise the generated secret name.
+Name of the data PVC (single volume covering palace + WAL).
 */}}
-{{- define "mempalace.authSecretName" -}}
-{{- if .Values.auth.existingSecret }}
-{{- .Values.auth.existingSecret }}
-{{- else }}
-{{- printf "%s-auth" (include "mempalace.fullname" .) }}
-{{- end }}
-{{- end }}
-
-{{/*
-Name of the palace PVC.
-*/}}
-{{- define "mempalace.palacePvcName" -}}
-{{- printf "%s-palace" (include "mempalace.fullname" .) }}
-{{- end }}
-
-{{/*
-Name of the chroma PVC.
-*/}}
-{{- define "mempalace.chromaPvcName" -}}
-{{- printf "%s-chroma" (include "mempalace.fullname" .) }}
+{{- define "mempalace.dataPvcName" -}}
+{{- printf "%s-data" (include "mempalace.fullname" .) }}
 {{- end }}

@@ -5,45 +5,40 @@ Namespace: {{ .Release.Namespace }}
 Version:   {{ .Chart.AppVersion }}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Accessing MemPalace
+ Connecting AI agents (SSE endpoint)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{- if .Values.ingress.enabled }}
+External SSE URL:
 {{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/sse
 {{- end }}
 {{- else }}
-Run these commands to forward the service port to your local machine:
+In-cluster SSE URL (from agent pods in any namespace):
+  http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
 
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} \
-    -l "app.kubernetes.io/name={{ include "mempalace.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" \
-    -o jsonpath="{.items[0].metadata.name}")
-
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.service.targetPort }}
-
-Then open: http://127.0.0.1:8080
+To test from your local machine, port-forward first:
+  kubectl --namespace {{ .Release.Namespace }} port-forward \
+    svc/{{ include "mempalace.fullname" . }} 8080:{{ .Values.service.port }}
+  # then connect to: http://127.0.0.1:8080/sse
 {{- end }}
 
+Configure an MCP client to point at the SSE URL above, e.g.:
+  claude mcp add mempalace http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Notes
+ Storage
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{- if .Values.persistence.enabled }}
-  Persistence: ENABLED
-  Palace PVC:  {{ include "mempalace.palacePvcName" . }} ({{ .Values.persistence.palace.size }})
-  Chroma PVC:  {{ include "mempalace.chromaPvcName" . }} ({{ .Values.persistence.chroma.size }})
+  Data PVC: {{ include "mempalace.dataPvcName" . }} ({{ .Values.persistence.size }})
+  Mounted at /data — contains palace files, ChromaDB index, knowledge graph, WAL.
 
-  Both PVCs have helm.sh/resource-policy: keep – they survive helm uninstall.
-  To delete them manually:
-    kubectl delete pvc {{ include "mempalace.palacePvcName" . }} {{ include "mempalace.chromaPvcName" . }} -n {{ .Release.Namespace }}
+  The PVC has helm.sh/resource-policy: keep — it survives helm uninstall.
+  Delete manually only when you no longer need the data:
+    kubectl delete pvc {{ include "mempalace.dataPvcName" . }} -n {{ .Release.Namespace }}
 {{- else }}
-  Persistence: DISABLED (data will be lost on pod restart)
+  Persistence: DISABLED — data uses emptyDir and will be lost on pod restart.
 {{- end }}
 
-{{- if .Values.auth.enabled }}
-  Auth:        ENABLED  (AUTH_TOKEN injected from Secret)
-{{- else }}
-  Auth:        DISABLED  (set auth.enabled=true and auth.token=<token> to enable)
-{{- end }}
-
-  Replicas: {{ .Values.replicaCount }} (keep at 1 – see README for details)
+  Replicas: {{ .Values.replicaCount }} (keep at 1 — see README for details)

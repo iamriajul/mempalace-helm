@@ -1,16 +1,24 @@
 # Default values for mempalace.
 # Override any of these in a custom values file or with --set.
 
+# ── Architecture note ─────────────────────────────────────────────────────────
+# MemPalace is a stdio-based MCP server (JSON-RPC over stdin/stdout).
+# This chart wraps it with mcp-proxy, which exposes the stdio server over
+# SSE/Streamable-HTTP so multiple AI agents can connect to a single pod.
+#
+# Agent connection URL:  http://<service>.<namespace>.svc.cluster.local/sse
+# External (ingress):   https://mempalace.example.com/sse
+
 # ── Replica count ─────────────────────────────────────────────────────────────
-# Keep at 1.  MemPalace embeds ChromaDB in-process and writes directly to the
-# local filesystem.  Running multiple replicas against the same PVC leads to
-# data corruption.  If you need horizontal scale, run a dedicated external
-# Chroma server and update CHROMA_HOST/CHROMA_PORT accordingly.
+# Keep at 1.  mcp-proxy spawns exactly one MemPalace subprocess which holds
+# an exclusive in-process ChromaDB connection.  Multiple replicas would each
+# hold their own ChromaDB client against the same ReadWriteOnce PVC, risking
+# index corruption.
 replicaCount: 1
 
 # ── Image ─────────────────────────────────────────────────────────────────────
 image:
-  repository: ghcr.io/OWNER/mempalace
+  repository: ghcr.io/iamriajul/mempalace
   # Defaults to the chart appVersion when left empty.
   tag: ""
   pullPolicy: IfNotPresent
@@ -34,13 +42,14 @@ podLabels: {}
 
 # ── Security contexts ─────────────────────────────────────────────────────────
 podSecurityContext:
-  # fsGroup ensures mounted PVC files are owned by the mempalace user (uid 1000).
+  # fsGroup=1000 ensures the PVC mounted at /data is writable by uid 1000 (mempalace).
   fsGroup: 1000
   runAsNonRoot: true
 
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false   # ChromaDB writes to temp dirs at runtime
+  # ChromaDB writes its HNSW index and temp files at runtime; root FS must stay writable.
+  readOnlyRootFilesystem: false
   runAsNonRoot: true
   runAsUser: 1000
   capabilities:
@@ -55,6 +64,10 @@ service:
   annotations: {}
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
+# Enable to expose the SSE endpoint outside the cluster.
+# Agents inside the cluster can reach it via the ClusterIP service directly.
+# Auth is handled at this layer (e.g. nginx basic-auth or OAuth2 proxy) —
+# MemPalace itself has no application-level authentication.
 ingress:
   enabled: false
   className: ""
@@ -75,69 +88,52 @@ ingress:
 resources:
   requests:
     cpu: 100m
-    memory: 256Mi
+    memory: 512Mi   # ChromaDB HNSW index is in-memory; size grows with palace
   limits:
     cpu: 1000m
-    memory: 1Gi
+    memory: 2Gi
 
 # ── Persistence ───────────────────────────────────────────────────────────────
+# A single PVC is mounted at /data.  All palace state lives under it:
+#   /data/palace/            — ChromaDB files + knowledge_graph.sqlite3 + palace YAML
+#   /data/.mempalace/wal/    — write-ahead log (HOME=/data in the container)
 persistence:
   enabled: true
   # Leave empty to use the cluster default StorageClass.
   storageClass: ""
-  palace:
-    size: 1Gi
-    accessModes:
-      - ReadWriteOnce
-  chroma:
-    size: 5Gi
-    accessModes:
-      - ReadWriteOnce
-
-# ── Auth ──────────────────────────────────────────────────────────────────────
-auth:
-  # Set enabled: true to mount an AUTH_TOKEN env var into the container.
-  enabled: false
-  # If existingSecret is set, the chart uses that Secret instead of creating one.
-  # The Secret must have a key named "token".
-  existingSecret: ""
-  # Plaintext token – only used when existingSecret is empty.
-  # In production, pass this via --set auth.token=... or a sealed secret.
-  token: ""
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
 
 # ── Application configuration ─────────────────────────────────────────────────
 config:
-  palaceDataPath: /data/palace
-  chromaDataPath: /data/chroma
-  # Log level: debug | info | warning | error
-  logLevel: info
+  # Directory passed to `mempalace.mcp_server --palace`.
+  # ChromaDB, the knowledge graph, and palace YAML all live here.
+  palacePath: /data/palace
 
 # ── Extra environment variables ───────────────────────────────────────────────
-# Injected verbatim into the container spec.
+# Forwarded into the mcp-proxy process and passed through to the MemPalace
+# subprocess via mcp-proxy's --pass-environment flag.
 # Example:
 #   extraEnv:
-#     - name: OPENAI_API_KEY
-#       valueFrom:
-#         secretKeyRef:
-#           name: openai-secret
-#           key: api-key
+#     - name: MEMPALACE_LOG_LEVEL
+#       value: debug
 env:
   extraEnv: []
 
 # ── Probes ────────────────────────────────────────────────────────────────────
+# mcp-proxy does not expose an HTTP health endpoint; use a TCP socket check.
 livenessProbe:
-  httpGet:
-    path: /healthz
+  tcpSocket:
     port: http
-  initialDelaySeconds: 15
+  initialDelaySeconds: 10
   periodSeconds: 20
   failureThreshold: 3
 
 readinessProbe:
-  httpGet:
-    path: /healthz
+  tcpSocket:
     port: http
-  initialDelaySeconds: 10
+  initialDelaySeconds: 5
   periodSeconds: 10
   failureThreshold: 3
 

@@ -1,36 +1,52 @@
 # mempalace-helm
 
 Helm chart and container image build pipeline for
-[MemPalace](https://github.com/OWNER/mempalace) — an AI-powered memory palace
-application backed by [ChromaDB](https://www.trychroma.com/).
+[MemPalace](https://github.com/MemPalace/mempalace) — the highest-scoring AI
+memory system ever benchmarked, backed by ChromaDB and SQLite.
 
 ---
 
-## What this repo is
+## How it works
 
-This repository ships:
+MemPalace is a **stdio-based MCP server** (`python -m mempalace.mcp_server`).
+It communicates via JSON-RPC over stdin/stdout — it has no built-in HTTP server.
+
+This chart wraps it with **[mcp-proxy](https://github.com/sparfenyuk/mcp-proxy)**,
+which bridges the stdio server to SSE/Streamable-HTTP. This lets multiple AI
+agents connect to a **single shared pod** over the network:
+
+```
+Agent A ──SSE──┐
+Agent B ──SSE──┤──► mcp-proxy :8080 ──stdio──► mempalace.mcp_server
+Agent C ──SSE──┘                                      │
+                                              /data/palace/
+                                        (ChromaDB + knowledge graph
+                                           + palace YAML + WAL)
+```
+
+All agents share one palace. Each agent gets its own wing and diary inside it.
+
+---
+
+## What this repo ships
 
 | Artifact | Location |
 |---|---|
-| `Dockerfile` | Multi-stage Python 3.11 image for MemPalace |
+| `Dockerfile` | Installs `mempalace` + `mcp-proxy` from PyPI; no source copy |
 | Helm chart | `helm/mempalace/` |
-| Image CI | `.github/workflows/image.yml` — builds & pushes to GHCR |
-| Helm CI | `.github/workflows/helm-release.yml` — lints, packages & publishes to GHCR OCI |
-
-The Helm chart is the **primary deployment mechanism**. Raw manifests are not provided.
+| Image CI | `.github/workflows/image.yml` — builds & pushes to GHCR with cache |
+| Helm CI | `.github/workflows/helm-release.yml` — lints, packages & publishes OCI |
 
 ---
 
-## What it deploys
+## What the chart deploys
 
-- MemPalace application container (single replica by design — see [Replica note](#replica-count))
-- `PersistentVolumeClaim` for palace data
-- `PersistentVolumeClaim` for ChromaDB data
-- `ClusterIP` Service
-- Optional `Ingress`
-- `ConfigMap` for non-sensitive runtime config
-- Optional `Secret` for the auth token
-- `ServiceAccount` (automounting disabled)
+- `Deployment` running `mcp-proxy` → `mempalace.mcp_server` (1 replica)
+- `PersistentVolumeClaim` at `/data` (palace files, ChromaDB index, WAL)
+- `ClusterIP` Service on port 80 → container port 8080
+- Optional `Ingress` for external agent access
+- `ConfigMap` with `MEMPALACE_PALACE_PATH`
+- `ServiceAccount` (token automounting disabled)
 
 ---
 
@@ -39,18 +55,16 @@ The Helm chart is the **primary deployment mechanism**. Raw manifests are not pr
 ### Prerequisites
 
 - `kubectl` connected to a cluster
-- `helm` ≥ 3.14 (OCI support enabled by default)
+- `helm` ≥ 3.14
 
-### Install from source (local chart)
+### Install from source
 
 ```bash
-git clone https://github.com/OWNER/mempalace-helm.git
+git clone https://github.com/iamriajul/mempalace-helm.git
 cd mempalace-helm
 
 helm install mempalace ./helm/mempalace \
-  --namespace mempalace --create-namespace \
-  --set image.repository=ghcr.io/OWNER/mempalace \
-  --set image.tag=main
+  --namespace mempalace --create-namespace
 ```
 
 ### Install from GHCR OCI
@@ -59,142 +73,124 @@ helm install mempalace ./helm/mempalace \
 helm registry login ghcr.io --username YOUR_GITHUB_USER --password YOUR_PAT
 
 helm install mempalace \
-  oci://ghcr.io/OWNER/charts/mempalace \
+  oci://ghcr.io/iamriajul/charts/mempalace \
   --version 0.1.0 \
   --namespace mempalace --create-namespace
 ```
 
----
+### Connect an agent
 
-## Building and pushing the container image
-
-### Manually
+After install, point any MCP-compatible agent at the SSE endpoint:
 
 ```bash
-# Build
-docker build -t ghcr.io/OWNER/mempalace:local .
+# In-cluster (from another pod)
+claude mcp add mempalace \
+  http://mempalace.mempalace.svc.cluster.local/sse
 
-# Push (requires docker login ghcr.io first)
-docker login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
-docker push ghcr.io/OWNER/mempalace:local
+# Local testing via port-forward
+kubectl port-forward svc/mempalace 8080:80 -n mempalace
+claude mcp add mempalace http://127.0.0.1:8080/sse
 ```
 
-### Via GitHub Actions
+---
 
-The workflow `.github/workflows/image.yml` triggers automatically on:
+## Building and pushing the image
 
-- Push to `main` → tags image as `main` + `sha-<short-sha>`
-- Push of a `v*.*.*` tag → tags as semver (`1.2.3`, `1.2`) + `sha-<short-sha>`
-- Manual `workflow_dispatch`
+The Dockerfile installs MemPalace and mcp-proxy from PyPI — no application
+source lives in this repo.
 
-BuildKit registry cache is stored in GHCR alongside the image
-(`ghcr.io/OWNER/mempalace:buildcache`) — no extra storage required.
+```bash
+# Build (pin a version with --build-arg MEMPALACE_VERSION=3.1.0)
+docker build -t ghcr.io/iamriajul/mempalace:local .
+
+# Push
+docker login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
+docker push ghcr.io/iamriajul/mempalace:local
+```
+
+The CI workflow (`.github/workflows/image.yml`) triggers on push to `main` and
+on `v*.*.*` tags. BuildKit registry cache is stored in GHCR — no extra storage
+needed.
 
 ---
 
 ## Helm chart operations
 
-### Lint
-
 ```bash
+# Lint
 helm lint helm/mempalace --strict
-```
 
-### Render templates locally (dry run)
-
-```bash
+# Dry-run render
 helm template mempalace ./helm/mempalace --debug
-```
 
-### Package
-
-```bash
+# Package
 helm package helm/mempalace --destination /tmp/helm-packages
-```
 
-### Publish to GHCR OCI manually
-
-```bash
+# Publish to GHCR OCI
 helm registry login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
+helm push /tmp/helm-packages/mempalace-0.1.0.tgz oci://ghcr.io/iamriajul/charts
 
-helm push /tmp/helm-packages/mempalace-0.1.0.tgz \
-  oci://ghcr.io/OWNER/charts
-```
-
-### Verify the published chart
-
-```bash
-helm pull oci://ghcr.io/OWNER/charts/mempalace --version 0.1.0
+# Verify
+helm pull oci://ghcr.io/iamriajul/charts/mempalace --version 0.1.0
 ```
 
 ---
 
-## Key values to customize
+## Key values
 
 | Value | Default | Description |
 |---|---|---|
-| `image.repository` | `ghcr.io/OWNER/mempalace` | Container image repository |
+| `image.repository` | `ghcr.io/iamriajul/mempalace` | Container image |
 | `image.tag` | *(chart appVersion)* | Image tag |
-| `replicaCount` | `1` | See [Replica note](#replica-count) |
-| `service.type` | `ClusterIP` | `ClusterIP`, `NodePort`, or `LoadBalancer` |
-| `ingress.enabled` | `false` | Enable Kubernetes Ingress |
-| `persistence.enabled` | `true` | Enable PVC-backed storage |
-| `persistence.palace.size` | `1Gi` | PVC size for palace data |
-| `persistence.chroma.size` | `5Gi` | PVC size for ChromaDB data |
-| `persistence.storageClass` | *(cluster default)* | StorageClass for both PVCs |
-| `auth.enabled` | `false` | Inject `AUTH_TOKEN` env var |
-| `auth.token` | `""` | Token value (use `auth.existingSecret` in production) |
-| `auth.existingSecret` | `""` | Use a pre-existing Secret (must have key `token`) |
-| `resources.requests.memory` | `256Mi` | Pod memory request |
-| `resources.limits.memory` | `1Gi` | Pod memory limit |
-| `env.extraEnv` | `[]` | Extra env vars (e.g. `OPENAI_API_KEY`) |
+| `replicaCount` | `1` | Must stay 1 — see [Replica count](#replica-count) |
+| `service.type` | `ClusterIP` | Service type |
+| `ingress.enabled` | `false` | Expose SSE endpoint externally |
+| `persistence.enabled` | `true` | PVC-backed palace storage |
+| `persistence.size` | `10Gi` | PVC size |
+| `persistence.storageClass` | *(cluster default)* | StorageClass |
+| `config.palacePath` | `/data/palace` | Palace directory inside the PVC |
+| `resources.requests.memory` | `512Mi` | ChromaDB HNSW index is in-memory |
+| `resources.limits.memory` | `2Gi` | Grows with palace size |
+| `env.extraEnv` | `[]` | Extra env vars passed to MemPalace subprocess |
 
-Full list: see [`helm/mempalace/values.yaml`](helm/mempalace/values.yaml).
+Full reference: [`helm/mempalace/values.yaml`](helm/mempalace/values.yaml).
 
 ---
 
 ## Persistence
 
-Two PVCs are created when `persistence.enabled: true` (the default):
+A single PVC is mounted at `/data`. It holds everything:
 
-| PVC | Mount path | Default size |
-|---|---|---|
-| `<release>-palace` | `/data/palace` | `1Gi` |
-| `<release>-chroma` | `/data/chroma` | `5Gi` |
+| Path | Contents |
+|---|---|
+| `/data/palace/` | ChromaDB files, `knowledge_graph.sqlite3`, palace YAML |
+| `/data/.mempalace/wal/` | Write-ahead log (`HOME=/data` in container) |
 
-Both PVCs carry `helm.sh/resource-policy: keep` — they **survive `helm uninstall`**
-to prevent accidental data loss. Delete them manually when no longer needed:
+The PVC has `helm.sh/resource-policy: keep` — it **survives `helm uninstall`**.
+Delete manually only when you no longer need the data:
 
 ```bash
-kubectl delete pvc mempalace-palace mempalace-chroma -n mempalace
+kubectl delete pvc mempalace-data -n mempalace
 ```
 
-When `persistence.enabled: false` both paths use `emptyDir` — data is lost on pod
-restart. Use this for ephemeral testing only.
+When `persistence.enabled: false` the volume uses `emptyDir` — data is lost on
+pod restart. Use only for ephemeral testing.
 
 ---
 
 ## Auth
 
-```yaml
-# Dev: inline token
-auth:
-  enabled: true
-  token: "my-secret-token"
+MemPalace has **no application-level authentication**. Auth is enforced at the
+network layer:
 
-# Production: reference a pre-existing Secret
-auth:
-  enabled: true
-  existingSecret: my-external-secret   # must have a key named "token"
-```
-
-When `auth.enabled: true` the chart mounts `AUTH_TOKEN` into the container.
-Never commit real tokens. Pass via `--set auth.token=...` at deploy time, or use
-Sealed Secrets / External Secrets Operator.
+- **In-cluster agents**: use a `NetworkPolicy` to restrict which pods can reach
+  the `mempalace` Service.
+- **External access via Ingress**: configure your ingress controller's auth
+  mechanism — e.g. nginx `auth-secret`, `oauth2-proxy`, or mTLS.
 
 ---
 
-## Ingress example
+## Ingress example (external agents)
 
 ```yaml
 # values-prod.yaml
@@ -203,7 +199,7 @@ ingress:
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    # Restrict to internal clients or add auth via oauth2-proxy
   hosts:
     - host: mempalace.example.com
       paths:
@@ -217,6 +213,9 @@ ingress:
 
 ```bash
 helm upgrade mempalace ./helm/mempalace -f values-prod.yaml -n mempalace
+
+# Agents connect to:
+#   https://mempalace.example.com/sse
 ```
 
 ---
@@ -224,16 +223,14 @@ helm upgrade mempalace ./helm/mempalace -f values-prod.yaml -n mempalace
 ## Upgrade notes
 
 ```bash
-helm upgrade mempalace oci://ghcr.io/OWNER/charts/mempalace \
-  --version 0.2.0 \
-  --namespace mempalace \
-  --reuse-values
+helm upgrade mempalace oci://ghcr.io/iamriajul/charts/mempalace \
+  --version 0.2.0 --namespace mempalace --reuse-values
 ```
 
-The Deployment uses `strategy.type: Recreate` because PVCs default to
-`ReadWriteOnce`. The old pod is terminated before the new one starts — expect a
-brief downtime during upgrades. For zero-downtime upgrades, switch to a
-`ReadWriteMany` StorageClass and change the strategy to `RollingUpdate`.
+The Deployment uses `strategy: Recreate` — the old pod terminates before the
+new one starts (required for `ReadWriteOnce` PVCs). Expect brief downtime. For
+zero-downtime upgrades, use a `ReadWriteMany` StorageClass and switch to
+`RollingUpdate`.
 
 ---
 
@@ -241,25 +238,25 @@ brief downtime during upgrades. For zero-downtime upgrades, switch to a
 
 **Keep `replicaCount: 1`.**
 
-MemPalace runs ChromaDB in embedded (in-process) mode writing directly to the
-`/data/chroma` PVC. Running multiple replicas against the same `ReadWriteOnce`
-PVC will either fail at mount time or corrupt the ChromaDB index.
+mcp-proxy spawns exactly one `mempalace.mcp_server` subprocess. That subprocess
+holds an exclusive in-process ChromaDB connection and writes directly to the PVC.
+Running a second replica would create a second ChromaDB client against the same
+`ReadWriteOnce` PVC — either the mount fails or the HNSW index is corrupted.
 
-To scale horizontally, deploy a standalone
-[Chroma server](https://docs.trychroma.com/production/deployment) and configure
-MemPalace to connect via `CHROMA_HOST` / `CHROMA_PORT` env vars (use
-`env.extraEnv`). Once ChromaDB is external, replicas can be increased safely.
+Multiple **agents** connecting is fine — they all share the same single pod via
+SSE. That is the intended multi-agent architecture.
 
 ---
 
 ## Known limitations
 
-- Single-replica only (see above).
-- The `Dockerfile` `CMD` targets `mempalace.main:app` (uvicorn/ASGI). Adjust
-  if the upstream project uses a different entry point.
-- `readOnlyRootFilesystem` is disabled because ChromaDB writes temp files at
-  startup. Mount a writable `emptyDir` at `/tmp` and re-enable for hardening.
-- No `NetworkPolicy` is shipped. Add one appropriate to your CNI if needed.
+- Single replica only (see above).
+- `readOnlyRootFilesystem` is disabled — ChromaDB writes its HNSW index and
+  temp files at runtime. Hardening path: mount a writable `emptyDir` at `/tmp`
+  and re-enable the flag.
+- No `NetworkPolicy` is shipped. Add one to restrict which agent pods can reach
+  the Service.
+- mcp-proxy does not expose an HTTP health endpoint; probes use `tcpSocket`.
 
 ---
 
@@ -267,13 +264,13 @@ MemPalace to connect via `CHROMA_HOST` / `CHROMA_PORT` env vars (use
 
 ```
 .
-├── Dockerfile
+├── Dockerfile                     # pip install mempalace + mcp-proxy from PyPI
 ├── .dockerignore
 ├── README.md
 ├── .github/
 │   └── workflows/
-│       ├── image.yml          # build & push container image
-│       └── helm-release.yml   # lint, package & publish Helm chart
+│       ├── image.yml              # build & push container image
+│       └── helm-release.yml       # lint, package & publish Helm chart OCI
 └── helm/
     └── mempalace/
         ├── Chart.yaml
@@ -287,7 +284,7 @@ MemPalace to connect via `CHROMA_HOST` / `CHROMA_PORT` env vars (use
             ├── ingress.yaml
             ├── pvc.yaml
             ├── configmap.yaml
-            ├── secret.yaml
+            ├── secret.yaml        # comment-only; auth is at network layer
             ├── serviceaccount.yaml
             └── NOTES.txt
 ```

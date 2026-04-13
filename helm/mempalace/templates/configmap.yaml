@@ -6,7 +6,5 @@ metadata:
   labels:
     {{- include "mempalace.labels" . | nindent 4 }}
 data:
-  PALACE_DATA_PATH: {{ .Values.config.palaceDataPath | quote }}
-  CHROMA_DATA_PATH: {{ .Values.config.chromaDataPath | quote }}
-  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
-  PORT: {{ .Values.service.targetPort | toString | quote }}
+  # Consumed by MempalaceConfig; also passed via --palace CLI arg in the CMD.
+  MEMPALACE_PALACE_PATH: {{ .Values.config.palacePath | quote }}
