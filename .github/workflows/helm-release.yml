@@ -3,7 +3,7 @@ name: Helm Chart – Lint, Package & Publish
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - "helm/**"
       - ".github/workflows/helm-release.yml"
