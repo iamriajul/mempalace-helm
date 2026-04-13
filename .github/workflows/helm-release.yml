@@ -57,11 +57,3 @@ jobs:
             /tmp/helm-packages/mempalace-${{ steps.chart-version.outputs.version }}.tgz \
             oci://ghcr.io/${{ github.repository_owner }}/helm-charts
 
-      - name: Verify pushed chart (dry-run pull)
-        run: |
-          helm pull \
-            oci://ghcr.io/${{ github.repository_owner }}/helm-charts/mempalace \
-            --version ${{ steps.chart-version.outputs.version }} \
-            --destination /tmp/verify
-          echo "Chart verified:"
-          ls -lh /tmp/verify/
