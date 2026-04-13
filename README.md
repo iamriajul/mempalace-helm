@@ -146,6 +146,60 @@ Data is persisted in the `mempalace-data` Docker volume across container restart
 
 ---
 
+## Auto-save hooks (efficiency)
+
+MemPalace ships two Claude Code hook scripts that make memory saving **automatic** — you never need to manually ask Claude to remember anything.
+
+| Hook | Event | What it does |
+|---|---|---|
+| `mempal_save_hook.sh` | `Stop` (every response) | Counts messages; every 15 blocks Claude from stopping and forces a structured diary + palace save |
+| `mempal_precompact_hook.sh` | `PreCompact` | Always blocks before context compression — emergency full save before the window shrinks |
+
+**How it works:** hooks output `{"decision": "block", "reason": "..."}` — Claude cannot stop until it calls `mempalace_diary_write` + `mempalace_add_drawer` via the MCP tools. The AI does the classification (which wing/room) from context. No regex, no hardcoded rules.
+
+**These hooks work with remote MCP** — they only produce the block decision; the actual saves go through the MCP tools connected to your remote pod. You do **not** need `mempalace` installed locally (leave `MEMPAL_DIR` empty in the scripts).
+
+### Setup
+
+```bash
+# Download the hook scripts once per agent machine
+mkdir -p ~/.mempalace/hooks
+curl -o ~/.mempalace/hooks/mempal_save_hook.sh \
+  https://raw.githubusercontent.com/MemPalace/mempalace/main/hooks/mempal_save_hook.sh
+curl -o ~/.mempalace/hooks/mempal_precompact_hook.sh \
+  https://raw.githubusercontent.com/MemPalace/mempalace/main/hooks/mempal_precompact_hook.sh
+chmod +x ~/.mempalace/hooks/*.sh
+```
+
+Add to `~/.claude/settings.local.json` (or `.claude/settings.local.json` per project):
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "/absolute/path/to/.mempalace/hooks/mempal_save_hook.sh",
+        "timeout": 30
+      }]
+    }],
+    "PreCompact": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "/absolute/path/to/.mempalace/hooks/mempal_precompact_hook.sh",
+        "timeout": 30
+      }]
+    }]
+  }
+}
+```
+
+Make sure the MCP server is registered first (see [Connect an agent](#connect-an-agent)), then Claude will save automatically every 15 messages and before every context compaction.
+
+---
+
 ## Building and pushing the image
 
 The Dockerfile installs MemPalace and mcp-proxy from PyPI — no application
