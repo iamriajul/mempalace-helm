@@ -208,6 +208,12 @@ network layer:
 - **External access via Ingress**: configure your ingress controller's auth
   mechanism — e.g. nginx `auth-secret`, `oauth2-proxy`, or mTLS.
 
+> **TODO**: Add first-class bearer token support via `auth.token` / `auth.existingSecret`
+> values, wired into mcp-proxy's `--api-key` flag (server-side), so agents connecting
+> through the Ingress must supply `Authorization: Bearer <token>`. Blocked on
+> [sparfenyuk/mcp-proxy#&lt;PR&gt;](https://github.com/sparfenyuk/mcp-proxy/pulls)
+> adding server-side bearer auth — will implement once that merges.
+
 ---
 
 ## Ingress example (external agents)
