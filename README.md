@@ -161,23 +161,19 @@ MemPalace ships two Claude Code hook scripts that make memory saving **automatic
 
 ### One-command setup (recommended)
 
-This repo ships a Claude Code command that does everything automatically — downloads the hook scripts, registers the MCP server, and wires up `settings.local.json` in one shot.
-
-**First, add the command to Claude Code** (once per machine):
+Run this once on each agent machine — works with Claude Code, Codex CLI, and Gemini CLI:
 
 ```bash
-mkdir -p ~/.claude/commands
-curl -fsSL -o ~/.claude/commands/mempalace-connect.md \
-  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/.claude/commands/mempalace-connect.md
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 ```
 
-**Then run it inside any Claude Code session:**
+Then open a new session in your agent CLI and run:
 
 ```
 /mempalace-connect http://mempalace.mempalace.svc.cluster.local
 ```
 
-That's it. Claude downloads the hooks, registers `/mcp`, updates `settings.local.json`, and confirms everything is wired up. Restart Claude Code and auto-saves are active.
+The skill registers `/mcp`, downloads the auto-save hooks, and wires up `settings.local.json`. Restart your CLI and memories save automatically every 15 messages.
 
 ### Manual setup
 
