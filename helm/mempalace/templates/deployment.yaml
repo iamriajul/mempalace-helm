@@ -40,10 +40,33 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if .Values.auth.enabled }}
+          # When auth is enabled the Caddy sidecar owns port 8080 ("http").
+          # mcp-proxy is shifted to 8081 (pod-internal only).
+          command:
+            - mcp-proxy
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8081"
+            - --pass-environment
+            - --
+            - python
+            - -m
+            - mempalace.mcp_server
+            - --palace
+            - {{ .Values.config.palacePath | quote }}
+          {{- end }}
           ports:
+            {{- if .Values.auth.enabled }}
+            - name: mcp-internal
+              containerPort: 8081
+              protocol: TCP
+            {{- else }}
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "mempalace.fullname" . }}
@@ -51,15 +74,70 @@ spec:
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.auth.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- else }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: data
               mountPath: /data
+        {{- if .Values.auth.enabled }}
+        - name: auth-proxy
+          image: caddy:alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MEMPALACE_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.auth.existingSecret }}{{ .Values.auth.existingSecret }}{{ else }}{{ include "mempalace.fullname" . }}-auth{{ end }}
+                  key: {{ .Values.auth.existingSecretKey | default "token" }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          resources:
+            {{- toYaml .Values.auth.proxy.resources | nindent 12 }}
+          volumeMounts:
+            - name: caddy-config
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+        {{- end }}
       volumes:
         - name: data
           {{- if .Values.persistence.enabled }}
@@ -68,6 +146,11 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- if .Values.auth.enabled }}
+        - name: caddy-config
+          configMap:
+            name: {{ include "mempalace.fullname" . }}-proxy
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

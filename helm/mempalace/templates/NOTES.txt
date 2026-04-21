@@ -28,12 +28,33 @@ To test from your local machine, port-forward first:
   # then connect to: http://127.0.0.1:8080/mcp  (or /sse)
 {{- end }}
 
+{{- if .Values.auth.enabled }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Authentication
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Bearer token authentication is ENABLED.
+Every client connection must include:
+  Authorization: Bearer <your-token>
+
+Retrieve the token:
+  kubectl get secret {{ include "mempalace.fullname" . }}-auth \
+    -n {{ .Release.Namespace }} \
+    -o jsonpath='{.data.token}' | base64 -d && echo
+
+{{- end }}
 Configure Claude Code (Streamable HTTP, recommended):
   claude mcp add mempalace --transport http \
+    {{- if .Values.auth.enabled }}
+    --header "Authorization: Bearer <your-token>" \
+    {{- end }}
     http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp
 
 Legacy SSE fallback:
   claude mcp add mempalace --transport sse \
+    {{- if .Values.auth.enabled }}
+    --header "Authorization: Bearer <your-token>" \
+    {{- end }}
     http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
