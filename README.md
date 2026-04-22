@@ -92,6 +92,9 @@ SERVICE_URL="http://127.0.0.1:8080"
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 
 # 3. Configure MCP + hooks directly (no claude command required)
+#    If --url is omitted, installer prompts for SERVICE_URL.
+#    Optional bearer token:
+#    --token "<YOUR_TOKEN>"  (or set MCP_BEARER_TOKEN env var)
 ~/.mempalace/hooks/install.sh --url "${SERVICE_URL}" --transport http --scope global
 ```
 
@@ -158,6 +161,9 @@ Run this once on each agent machine:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 ```
+
+If `SERVICE_URL`/`--url` is not provided, the installer asks interactively.
+It also optionally asks for a bearer token (or use `--token` / `MCP_BEARER_TOKEN`).
 
 Then run full headless setup directly:
 

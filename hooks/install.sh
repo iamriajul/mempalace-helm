@@ -11,7 +11,7 @@ err()  { echo -e "${RED}✗${NC} $*" >&2; }
 usage() {
   cat <<'USAGE'
 Usage:
-  hooks/install.sh --url <base-url> [--transport http|sse] [--name mempalace] [--scope global|project]
+  hooks/install.sh [--url <base-url>] [--transport http|sse] [--name mempalace] [--scope global|project] [--token <bearer-token>] [--no-prompt]
 
 Examples:
   hooks/install.sh --url http://127.0.0.1:8080
@@ -30,6 +30,33 @@ URL=""
 TRANSPORT="http"
 SERVER_NAME="mempalace"
 SCOPE="global"
+TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
+PROMPT="true"
+
+can_prompt() {
+  [ "$PROMPT" = "true" ] && [ -r /dev/tty ]
+}
+
+prompt_line() {
+  local prompt="$1"
+  local value
+  if ! can_prompt; then
+    return 1
+  fi
+  IFS= read -r -p "$prompt" value < /dev/tty || return 1
+  printf '%s' "$value"
+}
+
+prompt_secret() {
+  local prompt="$1"
+  local value
+  if ! can_prompt; then
+    return 1
+  fi
+  IFS= read -r -s -p "$prompt" value < /dev/tty || return 1
+  printf '\n' > /dev/tty
+  printf '%s' "$value"
+}
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -49,6 +76,14 @@ while [ "$#" -gt 0 ]; do
       SCOPE="${2:-}"
       shift 2
       ;;
+    --token)
+      TOKEN="${2:-}"
+      shift 2
+      ;;
+    --no-prompt)
+      PROMPT="false"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -61,8 +96,19 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ -z "$URL" ] && [ -n "${SERVICE_URL:-}" ]; then
+  URL="${SERVICE_URL}"
+fi
+
 if [ -z "$URL" ]; then
-  err "Missing required --url"
+  if can_prompt; then
+    URL="$(prompt_line 'Enter MemPalace SERVICE_URL (example: http://127.0.0.1:8080): ' || true)"
+    URL="${URL:-}"
+  fi
+fi
+
+if [ -z "$URL" ]; then
+  err "Missing URL. Pass --url, set SERVICE_URL, or run interactively with a TTY."
   usage
   exit 1
 fi
@@ -81,6 +127,19 @@ fi
 if [[ ! "$SERVER_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   err "--name may only contain letters, digits, dot, underscore, or hyphen"
   exit 1
+fi
+if printf '%s' "$TOKEN" | grep -q '[[:cntrl:]]'; then
+  err "--token contains unsupported control characters"
+  exit 1
+fi
+
+if [ -z "$TOKEN" ] && can_prompt; then
+  USE_TOKEN="$(prompt_line 'Use bearer token auth? [y/N]: ' || true)"
+  case "${USE_TOKEN:-}" in
+    y|Y|yes|YES)
+      TOKEN="$(prompt_secret 'Bearer token: ' || true)"
+      ;;
+  esac
 fi
 
 need_cmd python3
@@ -130,7 +189,7 @@ PRECOMPACT_HOOK="$HOOK_DIR/mempal_precompact_hook.sh"
 info "Writing MCP server to ${CLAUDE_CONFIG}"
 info "Writing hooks to ${SETTINGS_PATH}"
 
-python3 - "$CLAUDE_CONFIG" "$SETTINGS_PATH" "$SERVER_NAME" "$TRANSPORT" "$FINAL_URL" "$SAVE_HOOK" "$PRECOMPACT_HOOK" <<'PYEOF'
+python3 - "$CLAUDE_CONFIG" "$SETTINGS_PATH" "$SERVER_NAME" "$TRANSPORT" "$FINAL_URL" "$SAVE_HOOK" "$PRECOMPACT_HOOK" "$TOKEN" <<'PYEOF'
 import json
 import os
 import sys
@@ -142,6 +201,7 @@ transport = sys.argv[4]
 url = sys.argv[5]
 save_hook = sys.argv[6]
 precompact_hook = sys.argv[7]
+token = sys.argv[8]
 
 
 def load_json(path: str):
@@ -179,7 +239,20 @@ def ensure_hook(hooks_cfg: dict, event: str, command: str):
 
 
 claude_cfg = load_json(claude_cfg_path)
-claude_cfg.setdefault("mcpServers", {})[server_name] = {"type": transport, "url": url}
+servers = claude_cfg.setdefault("mcpServers", {})
+current = servers.get(server_name, {})
+if not isinstance(current, dict):
+    current = {}
+server_cfg = dict(current)
+server_cfg["type"] = transport
+server_cfg["url"] = url
+if token:
+    headers = server_cfg.get("headers", {})
+    if not isinstance(headers, dict):
+        headers = {}
+    headers["Authorization"] = f"Bearer {token}"
+    server_cfg["headers"] = headers
+servers[server_name] = server_cfg
 dump_json(claude_cfg_path, claude_cfg)
 
 settings = load_json(settings_path)

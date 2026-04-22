@@ -19,13 +19,15 @@ usage() {
 Usage:
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-    bash -s -- --url <base-url> [--transport http|sse] [--scope global|project] [--name mempalace]
+    bash -s -- [--url <base-url>] [--transport http|sse] [--scope global|project] [--name mempalace] [--token <bearer-token>] [--no-prompt]
 
 Options:
-  --url <base-url>         Configure MCP + hooks immediately (headless mode)
+  --url <base-url>         MemPalace base URL (falls back to SERVICE_URL env or interactive prompt)
   --transport <http|sse>   MCP transport (default: http)
   --scope <global|project> Hook settings target (default: global)
   --name <server-name>     MCP server name (default: mempalace)
+  --token <bearer-token>   Optional bearer token for MCP Authorization header
+  --no-prompt              Disable interactive prompts; fail if required values are missing
   -h, --help               Show this help text
 USAGE
 }
@@ -41,6 +43,8 @@ URL=""
 TRANSPORT="http"
 SCOPE="global"
 SERVER_NAME="mempalace"
+TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
+NO_PROMPT="false"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -59,6 +63,14 @@ while [ "$#" -gt 0 ]; do
     --name)
       SERVER_NAME="${2:-}"
       shift 2
+      ;;
+    --token)
+      TOKEN="${2:-}"
+      shift 2
+      ;;
+    --no-prompt)
+      NO_PROMPT="true"
+      shift
       ;;
     -h|--help)
       usage
@@ -99,15 +111,13 @@ fetch "$HOOK_INSTALL_URL" "$HOOK_DIR/install.sh"
 chmod +x "$HOOK_DIR/mempal_save_hook.sh" "$HOOK_DIR/mempal_precompact_hook.sh" "$HOOK_DIR/install.sh"
 ok "Installed: $HOOK_DIR"
 
-if [ -n "$URL" ]; then
-  info "Running headless configuration"
-  "$HOOK_DIR/install.sh" --url "$URL" --transport "$TRANSPORT" --scope "$SCOPE" --name "$SERVER_NAME"
-  ok "Setup complete"
-  exit 0
-fi
+info "Configuring MCP + hooks"
+ARGS=(--transport "$TRANSPORT" --scope "$SCOPE" --name "$SERVER_NAME")
+[ -n "$URL" ] && ARGS+=(--url "$URL")
+[ -n "$TOKEN" ] && ARGS+=(--token "$TOKEN")
+[ "$NO_PROMPT" = "true" ] && ARGS+=(--no-prompt)
+"$HOOK_DIR/install.sh" "${ARGS[@]}"
+ok "Setup complete"
 
-echo ""
-echo "Next step:"
+echo "Run again anytime:"
 echo "  ~/.mempalace/hooks/install.sh --url http://<your-mempalace-host> --transport http --scope global"
-echo ""
-echo "This installs MCP + auto-save hooks without any Claude command usage."
