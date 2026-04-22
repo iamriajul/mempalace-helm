@@ -151,23 +151,15 @@ MemPalace ships two Claude Code hook scripts that make memory saving **automatic
 
 **These hooks work with remote MCP** — they only produce the block decision; the actual saves go through the MCP tools connected to your remote pod. You do **not** need `mempalace` installed locally (leave `MEMPAL_DIR` empty in the scripts).
 
-### One-command setup (recommended)
+### CLI setup (recommended)
 
-Run this once on each agent machine — works with Claude Code, Codex CLI, and Gemini CLI:
+Run this once on each agent machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 ```
 
-Then either open a new session in your agent CLI and run:
-
-```
-/mempalace-connect http://mempalace.mempalace.svc.cluster.local
-```
-
-The skill registers `/mcp`, downloads the auto-save hooks, and wires up `settings.local.json`. Restart your CLI and memories save automatically every 15 messages.
-
-Or run full headless setup directly:
+Then run full headless setup directly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
@@ -176,7 +168,7 @@ curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/ins
 
 ### Manual setup
 
-If you prefer direct shell setup without agent commands:
+If you prefer to bootstrap only the local hook CLI first:
 
 ```bash
 mkdir -p ~/.mempalace/hooks
