@@ -111,6 +111,40 @@ config:
   # ChromaDB, the knowledge graph, and palace YAML all live here.
   palacePath: /data/palace
 
+# ── Authentication ────────────────────────────────────────────────────────────
+# When enabled, a Caddy sidecar is injected in front of mcp-proxy to enforce
+# Bearer token authentication on all incoming requests.  Caddy owns the named
+# "http" port (8080); mcp-proxy shifts to an internal port (8081).
+#
+# Enable with a token:
+#   helm install mempalace . \
+#     --set auth.enabled=true \
+#     --set auth.token=$(openssl rand -hex 32)
+#
+# Use a pre-existing Secret (e.g. sealed-secret):
+#   helm install mempalace . \
+#     --set auth.enabled=true \
+#     --set auth.existingSecret=my-secret
+auth:
+  enabled: false
+  # Bearer token value.  Required when enabled=true and existingSecret is unset.
+  # Tip: openssl rand -hex 32
+  token: ""
+  # Name of a pre-existing Secret in the same namespace that holds the token.
+  # When set, the chart will NOT create a Secret and auth.token is ignored.
+  existingSecret: ""
+  # Key inside the Secret (or the chart-managed Secret) that holds the token.
+  existingSecretKey: "token"
+  # Resources for the Caddy auth-proxy sidecar.
+  proxy:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
 # ── Extra environment variables ───────────────────────────────────────────────
 # Forwarded into the mcp-proxy process and passed through to the MemPalace
 # subprocess via mcp-proxy's --pass-environment flag.
