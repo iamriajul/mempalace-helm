@@ -77,7 +77,7 @@ mcp-proxy exposes two endpoints on port 8080:
 | SSE (legacy, widely supported) | `/sse` | 2024-11-05 |
 | Streamable HTTP (recommended) | `/mcp` | 2025-03-26+ |
 
-**Claude Code** (one-time setup per agent machine):
+**Claude Code** (one-time setup per agent machine, headless-safe):
 
 ```bash
 # 1. Get the service URL
@@ -88,15 +88,11 @@ SERVICE_URL="http://mempalace.mempalace.svc.cluster.local"
 kubectl port-forward svc/mempalace 8080:80 -n mempalace
 SERVICE_URL="http://127.0.0.1:8080"
 
-# 2. Register MemPalace as an MCP server in Claude Code
-#    Recommended: Streamable HTTP (MCP spec 2025-03-26+)
-claude mcp add mempalace --transport http "${SERVICE_URL}/mcp"
+# 2. Install MemPalace hooks + config installer (once)
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 
-#    Legacy SSE (if your client doesn't support Streamable HTTP yet)
-#    claude mcp add mempalace --transport sse "${SERVICE_URL}/sse"
-
-# 3. Verify it is registered
-claude mcp list
+# 3. Configure MCP + hooks directly (no claude command required)
+~/.mempalace/hooks/install.sh --url "${SERVICE_URL}" --transport http --scope global
 ```
 
 This writes the following into your Claude Code config (`~/.claude.json`):
@@ -132,14 +128,10 @@ docker run -d \
   ghcr.io/iamriajul/mempalace:latest
 ```
 
-Then register it in Claude Code:
+Then register MCP + hooks (headless-safe):
 
 ```bash
-# Streamable HTTP (recommended)
-claude mcp add mempalace --transport http http://127.0.0.1:8080/mcp
-
-# Legacy SSE
-# claude mcp add mempalace --transport sse http://127.0.0.1:8080/sse
+~/.mempalace/hooks/install.sh --url http://127.0.0.1:8080 --transport http --scope global
 ```
 
 Data is persisted in the `mempalace-data` Docker volume across container restarts.
@@ -167,7 +159,7 @@ Run this once on each agent machine — works with Claude Code, Codex CLI, and G
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 ```
 
-Then open a new session in your agent CLI and run:
+Then either open a new session in your agent CLI and run:
 
 ```
 /mempalace-connect http://mempalace.mempalace.svc.cluster.local
@@ -175,9 +167,32 @@ Then open a new session in your agent CLI and run:
 
 The skill registers `/mcp`, downloads the auto-save hooks, and wires up `settings.local.json`. Restart your CLI and memories save automatically every 15 messages.
 
+Or run full headless setup directly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
+```
+
 ### Manual setup
 
-If you prefer to configure things yourself, see the [hook scripts](https://github.com/MemPalace/mempalace/tree/main/hooks) in the upstream repo and add the following to `~/.claude/settings.local.json`:
+If you prefer direct shell setup without agent commands:
+
+```bash
+mkdir -p ~/.mempalace/hooks
+curl -fsSL -o ~/.mempalace/hooks/install.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/install.sh
+curl -fsSL -o ~/.mempalace/hooks/mempal_save_hook.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/mempal_save_hook.sh
+curl -fsSL -o ~/.mempalace/hooks/mempal_precompact_hook.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/mempal_precompact_hook.sh
+chmod +x ~/.mempalace/hooks/install.sh \
+         ~/.mempalace/hooks/mempal_save_hook.sh \
+         ~/.mempalace/hooks/mempal_precompact_hook.sh
+~/.mempalace/hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
+```
+
+This writes `mcpServers.mempalace` into `~/.claude.json` and adds the hook entries below into `~/.claude/settings.local.json`:
 
 ```json
 {
