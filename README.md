@@ -6,50 +6,6 @@ memory system ever benchmarked, backed by ChromaDB and SQLite.
 
 ---
 
-## How it works
-
-MemPalace is a **stdio-based MCP server** (`python -m mempalace.mcp_server`).
-It communicates via JSON-RPC over stdin/stdout — it has no built-in HTTP server.
-
-This chart wraps it with **[mcp-proxy](https://github.com/sparfenyuk/mcp-proxy)**,
-which bridges the stdio server to SSE/Streamable-HTTP. This lets multiple AI
-agents connect to a **single shared pod** over the network:
-
-```
-Agent A ──HTTP /mcp──┐
-Agent B ──HTTP /mcp──┤──► mcp-proxy :8080 ──stdio──► mempalace.mcp_server
-Agent C ──SSE  /sse──┘                                      │
-                                              /data/palace/
-                                        (ChromaDB + knowledge graph
-                                           + palace YAML + WAL)
-```
-
-All agents share one palace. Each agent gets its own wing and diary inside it.
-
----
-
-## What this repo ships
-
-| Artifact | Location |
-|---|---|
-| `Dockerfile` | Installs `mempalace` + `mcp-proxy` from PyPI; no source copy |
-| Helm chart | `helm/mempalace/` |
-| Image CI | `.github/workflows/image.yml` — builds & pushes to GHCR with cache |
-| Helm CI | `.github/workflows/helm-release.yml` — lints, packages & publishes OCI |
-
----
-
-## What the chart deploys
-
-- `Deployment` running `mcp-proxy` → `mempalace.mcp_server` (1 replica)
-- `PersistentVolumeClaim` at `/data` (palace files, ChromaDB index, WAL)
-- `ClusterIP` Service on port 80 → container port 8080
-- Optional `Ingress` for external agent access
-- `ConfigMap` with `MEMPALACE_PALACE_PATH`
-- `ServiceAccount` (token automounting disabled)
-
----
-
 ## Quick start
 
 ### Prerequisites
@@ -70,53 +26,29 @@ helm install mempalace \
 
 ### Connect an agent
 
-mcp-proxy exposes two endpoints on port 8080:
+Use Streamable HTTP (`/mcp`, recommended) or SSE (`/sse`, legacy).
 
-| Transport | Path | MCP spec version |
-|---|---|---|
-| SSE (legacy, widely supported) | `/sse` | 2024-11-05 |
-| Streamable HTTP (recommended) | `/mcp` | 2025-03-26+ |
-
-**Claude Code** (one-time setup per agent machine):
+**One-time setup on each agent machine:**
 
 ```bash
-# 1. Get the service URL
-#    In-cluster: use the Kubernetes DNS name directly
+# Set your MemPalace base URL
 SERVICE_URL="http://mempalace.mempalace.svc.cluster.local"
 
-#    Outside the cluster: port-forward for local testing
-kubectl port-forward svc/mempalace 8080:80 -n mempalace
-SERVICE_URL="http://127.0.0.1:8080"
-
-# 2. Register MemPalace as an MCP server in Claude Code
-#    Recommended: Streamable HTTP (MCP spec 2025-03-26+)
-claude mcp add mempalace --transport http "${SERVICE_URL}/mcp"
-
-#    Legacy SSE (if your client doesn't support Streamable HTTP yet)
-#    claude mcp add mempalace --transport sse "${SERVICE_URL}/sse"
-
-# 3. Verify it is registered
-claude mcp list
+# Install + configure MCP + hooks
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
 ```
 
-This writes the following into your Claude Code config (`~/.claude.json`):
+Optional bearer token:
 
-```json
-{
-  "mcpServers": {
-    "mempalace": {
-      "type": "http",
-      "url": "http://mempalace.mempalace.svc.cluster.local/mcp"
-    }
-  }
-}
+```bash
+MCP_BEARER_TOKEN="<YOUR_TOKEN>" curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
 ```
 
-> **SSE fallback:** replace `type: http` / `/mcp` with `type: sse` / `/sse` for older clients.
+If `--url` is omitted, installer prompts for `SERVICE_URL`. Restart your CLI after setup.
 
-On next launch Claude Code connects automatically and the 19 MemPalace tools
-(`mempalace_search`, `mempalace_add_drawer`, `mempalace_kg_query`, …) are
-available without any further configuration.
+Need deeper details? Jump to [Technical reference](#technical-reference).
 
 ---
 
@@ -132,14 +64,10 @@ docker run -d \
   ghcr.io/iamriajul/mempalace:latest
 ```
 
-Then register it in Claude Code:
+Then register MCP + hooks (headless-safe):
 
 ```bash
-# Streamable HTTP (recommended)
-claude mcp add mempalace --transport http http://127.0.0.1:8080/mcp
-
-# Legacy SSE
-# claude mcp add mempalace --transport sse http://127.0.0.1:8080/sse
+~/.mempalace/hooks/install.sh --url http://127.0.0.1:8080 --transport http --scope global
 ```
 
 Data is persisted in the `mempalace-data` Docker volume across container restarts.
@@ -148,53 +76,52 @@ Data is persisted in the `mempalace-data` Docker volume across container restart
 
 ## Auto-save hooks (efficiency)
 
-MemPalace ships two Claude Code hook scripts that make memory saving **automatic** — you never need to manually ask Claude to remember anything.
+MemPalace ships two hook scripts for automatic saves.
 
 | Hook | Event | What it does |
 |---|---|---|
 | `mempal_save_hook.sh` | `Stop` (every response) | Counts messages; every 15 blocks Claude from stopping and forces a structured diary + palace save |
 | `mempal_precompact_hook.sh` | `PreCompact` | Always blocks before context compression — emergency full save before the window shrinks |
 
-**How it works:** hooks output `{"decision": "block", "reason": "..."}` — Claude cannot stop until it calls `mempalace_diary_write` + `mempalace_add_drawer` via the MCP tools. The AI does the classification (which wing/room) from context. No regex, no hardcoded rules.
+Hooks only emit block decisions; actual memory writes happen through connected MCP tools.
 
-**These hooks work with remote MCP** — they only produce the block decision; the actual saves go through the MCP tools connected to your remote pod. You do **not** need `mempalace` installed locally (leave `MEMPAL_DIR` empty in the scripts).
+### CLI setup (recommended)
 
-### One-command setup (recommended)
-
-Run this once on each agent machine — works with Claude Code, Codex CLI, and Gemini CLI:
+Run this once on each agent machine:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
 ```
 
-Then open a new session in your agent CLI and run:
+If `SERVICE_URL`/`--url` is not provided, the installer asks interactively.
+It also optionally asks for a bearer token (or use `--token` / `MCP_BEARER_TOKEN`).
 
-```
-/mempalace-connect http://mempalace.mempalace.svc.cluster.local
-```
+Then run full headless setup directly:
 
-The skill registers `/mcp`, downloads the auto-save hooks, and wires up `settings.local.json`. Restart your CLI and memories save automatically every 15 messages.
+```bash
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
+```
 
 ### Manual setup
 
-If you prefer to configure things yourself, see the [hook scripts](https://github.com/MemPalace/mempalace/tree/main/hooks) in the upstream repo and add the following to `~/.claude/settings.local.json`:
+If you prefer to bootstrap only the local hook CLI first:
 
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "",
-      "hooks": [{"type": "command", "command": "/HOME/.mempalace/hooks/mempal_save_hook.sh", "timeout": 30}]
-    }],
-    "PreCompact": [{
-      "matcher": "",
-      "hooks": [{"type": "command", "command": "/HOME/.mempalace/hooks/mempal_precompact_hook.sh", "timeout": 30}]
-    }]
-  }
-}
+```bash
+mkdir -p ~/.mempalace/hooks
+curl -fsSL -o ~/.mempalace/hooks/install.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/install.sh
+curl -fsSL -o ~/.mempalace/hooks/mempal_save_hook.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/mempal_save_hook.sh
+curl -fsSL -o ~/.mempalace/hooks/mempal_precompact_hook.sh \
+  https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/hooks/mempal_precompact_hook.sh
+chmod +x ~/.mempalace/hooks/install.sh \
+         ~/.mempalace/hooks/mempal_save_hook.sh \
+         ~/.mempalace/hooks/mempal_precompact_hook.sh
+~/.mempalace/hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
 ```
 
-Replace `/HOME` with your actual home directory path.
+This writes MCP config to `~/.claude.json` and hook config to `~/.claude/settings.local.json`.
 
 ---
 
@@ -369,6 +296,47 @@ SSE. That is the intended multi-agent architecture.
 - No `NetworkPolicy` is shipped. Add one to restrict which agent pods can reach
   the Service.
 - mcp-proxy does not expose an HTTP health endpoint; probes use `tcpSocket`.
+
+---
+
+## Technical reference
+
+### How it works
+
+MemPalace is a **stdio-based MCP server** (`python -m mempalace.mcp_server`).
+It communicates via JSON-RPC over stdin/stdout — it has no built-in HTTP server.
+
+This chart wraps it with **[mcp-proxy](https://github.com/sparfenyuk/mcp-proxy)**,
+which bridges the stdio server to SSE/Streamable-HTTP:
+
+```
+Agent A ──HTTP /mcp──┐
+Agent B ──HTTP /mcp──┤──► mcp-proxy :8080 ──stdio──► mempalace.mcp_server
+Agent C ──SSE  /sse──┘                                      │
+                                              /data/palace/
+                                        (ChromaDB + knowledge graph
+                                           + palace YAML + WAL)
+```
+
+All agents share one palace. Each agent gets its own wing and diary inside it.
+
+### What this repo ships
+
+| Artifact | Location |
+|---|---|
+| `Dockerfile` | Installs `mempalace` + `mcp-proxy` from PyPI; no source copy |
+| Helm chart | `helm/mempalace/` |
+| Image CI | `.github/workflows/image.yml` — builds & pushes to GHCR with cache |
+| Helm CI | `.github/workflows/helm-release.yml` — lints, packages & publishes OCI |
+
+### What the chart deploys
+
+- `Deployment` running `mcp-proxy` → `mempalace.mcp_server` (1 replica)
+- `PersistentVolumeClaim` at `/data` (palace files, ChromaDB index, WAL)
+- `ClusterIP` Service on port 80 → container port 8080
+- Optional `Ingress` for external agent access
+- `ConfigMap` with `MEMPALACE_PALACE_PATH`
+- `ServiceAccount` (token automounting disabled)
 
 ---
 
