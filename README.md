@@ -31,25 +31,22 @@ Use Streamable HTTP (`/mcp`, recommended) or SSE (`/sse`, legacy).
 **One-time setup on each agent machine:**
 
 ```bash
-# 1. Get the service URL
-#    In-cluster: use the Kubernetes DNS name directly
+# Set your MemPalace base URL
 SERVICE_URL="http://mempalace.mempalace.svc.cluster.local"
 
-#    Outside the cluster: port-forward for local testing
-kubectl port-forward svc/mempalace 8080:80 -n mempalace
-SERVICE_URL="http://127.0.0.1:8080"
-
-# 2. Install MemPalace hooks + config installer (once)
-curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
-
-# 3. Configure MCP + hooks directly (no claude command required)
-#    If --url is omitted, installer prompts for SERVICE_URL.
-#    Optional bearer token:
-#    --token "<YOUR_TOKEN>"  (or set MCP_BEARER_TOKEN env var)
-~/.mempalace/hooks/install.sh --url "${SERVICE_URL}" --transport http --scope global
+# Install + configure MCP + hooks
+curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
 ```
 
-Restart your CLI after setup.
+Optional bearer token:
+
+```bash
+MCP_BEARER_TOKEN="<YOUR_TOKEN>" curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
+```
+
+If `--url` is omitted, installer prompts for `SERVICE_URL`. Restart your CLI after setup.
 
 Need deeper details? Jump to [Technical reference](#technical-reference).
 
