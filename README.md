@@ -20,7 +20,7 @@ The chart is public — no login required.
 ```bash
 helm install mempalace \
   oci://ghcr.io/iamriajul/helm-charts/mempalace \
-  --version 0.1.0 \
+  --version 0.1.1 \
   --namespace mempalace --create-namespace
 ```
 
@@ -159,10 +159,10 @@ helm package helm/mempalace --destination /tmp/helm-packages
 
 # Publish to GHCR OCI
 helm registry login ghcr.io -u YOUR_GITHUB_USER -p YOUR_PAT
-helm push /tmp/helm-packages/mempalace-0.1.0.tgz oci://ghcr.io/iamriajul/helm-charts
+helm push /tmp/helm-packages/mempalace-0.1.1.tgz oci://ghcr.io/iamriajul/helm-charts
 
 # Verify
-helm pull oci://ghcr.io/iamriajul/helm-charts/mempalace --version 0.1.0
+helm pull oci://ghcr.io/iamriajul/helm-charts/mempalace --version 0.1.1
 ```
 
 ---
@@ -211,19 +211,52 @@ pod restart. Use only for ephemeral testing.
 
 ## Auth
 
-MemPalace has **no application-level authentication**. Auth is enforced at the
-network layer:
+MemPalace has **no built-in application auth**, so this chart provides an
+optional auth sidecar. When `auth.enabled=true`, an unprivileged NGINX sidecar
+listens on port `8080`, requires `Authorization: Bearer <token>`, and proxies
+to the internal `mcp-proxy` listener on `8081`.
 
-- **In-cluster agents**: use a `NetworkPolicy` to restrict which pods can reach
-  the `mempalace` Service.
-- **External access via Ingress**: configure your ingress controller's auth
-  mechanism — e.g. nginx `auth-secret`, `oauth2-proxy`, or mTLS.
+Enable it with a generated token:
 
-> **TODO**: Add first-class bearer token support via `auth.token` / `auth.existingSecret`
-> values, wired into mcp-proxy's `--api-key` flag (server-side), so agents connecting
-> through the Ingress must supply `Authorization: Bearer <token>`. Blocked on
-> [sparfenyuk/mcp-proxy#&lt;PR&gt;](https://github.com/sparfenyuk/mcp-proxy/pulls)
-> adding server-side bearer auth — will implement once that merges.
+```bash
+helm upgrade --install mempalace ./helm/mempalace \
+  --namespace mempalace --create-namespace \
+  --set auth.enabled=true \
+  --set auth.token=$(openssl rand -hex 32)
+```
+
+Or use an existing Secret:
+
+```bash
+helm upgrade --install mempalace ./helm/mempalace \
+  --namespace mempalace --create-namespace \
+  --set auth.enabled=true \
+  --set auth.existingSecret=mempalace-auth
+```
+
+This is transport-layer protection for the exposed HTTP/SSE endpoints. You may
+still want `NetworkPolicy`, ingress-level auth, or both, depending on where the
+service is reachable from.
+
+### Automatic TLS
+
+If your cluster has cert-manager installed, the chart can request and renew the
+Ingress certificate automatically.
+
+```bash
+helm upgrade --install mempalace ./helm/mempalace \
+  --namespace mempalace --create-namespace \
+  --set ingress.enabled=true \
+  --set ingress.className=public \
+  --set ingress.hosts[0].host=mempalace.example.com \
+  --set ingress.certManager.enabled=true \
+  --set ingress.certManager.clusterIssuer=cert-manager-global
+```
+
+When `ingress.certManager.enabled=true`, the chart adds the cert-manager issuer
+annotation and renders the `spec.tls` block automatically. The TLS secret name
+defaults to `<release>-tls`, but can be overridden with
+`ingress.certManager.secretName`.
 
 ---
 

@@ -2,7 +2,7 @@ apiVersion: v2
 name: mempalace
 description: Helm chart for MemPalace – an AI-powered memory palace application backed by ChromaDB
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "latest"
 keywords:
   - mempalace

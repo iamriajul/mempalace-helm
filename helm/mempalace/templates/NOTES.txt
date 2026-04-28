@@ -1,3 +1,4 @@
+{{- $tlsEnabled := or .Values.ingress.certManager.enabled .Values.ingress.tls -}}
 MemPalace has been deployed successfully!
 
 Release:   {{ .Release.Name }}
@@ -15,8 +16,8 @@ Both transports are available on port {{ .Values.service.port }}:
 {{- if .Values.ingress.enabled }}
 External URLs:
 {{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/mcp   ← recommended
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/sse   ← legacy
+  http{{ if $tlsEnabled }}s{{ end }}://{{ .host }}/mcp   ← recommended
+  http{{ if $tlsEnabled }}s{{ end }}://{{ .host }}/sse   ← legacy
 {{- end }}
 {{- else }}
 In-cluster base URL (from agent pods in any namespace):
@@ -41,6 +42,22 @@ Retrieve the token:
   kubectl get secret {{ include "mempalace.fullname" . }}-auth \
     -n {{ .Release.Namespace }} \
     -o jsonpath='{.data.token}' | base64 -d && echo
+
+{{- end }}
+{{- if and .Values.ingress.enabled .Values.ingress.certManager.enabled }}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ TLS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Automatic TLS is ENABLED via cert-manager.
+Certificate issuer:
+  {{- if .Values.ingress.certManager.clusterIssuer }}
+  ClusterIssuer/{{ .Values.ingress.certManager.clusterIssuer }}
+  {{- else }}
+  Issuer/{{ .Values.ingress.certManager.issuer }}
+  {{- end }}
+TLS secret:
+  {{ default (printf "%s-tls" (include "mempalace.fullname" .)) .Values.ingress.certManager.secretName }}
 
 {{- end }}
 Configure Claude Code (Streamable HTTP, recommended):

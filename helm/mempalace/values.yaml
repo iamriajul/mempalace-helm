@@ -73,16 +73,26 @@ ingress:
   className: ""
   annotations: {}
     # nginx.ingress.kubernetes.io/rewrite-target: /
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
     - host: mempalace.example.com
       paths:
         - path: /
           pathType: Prefix
   tls: []
+  # Manual TLS configuration. When ingress.certManager.enabled=true, the chart
+  # renders a TLS stanza automatically and this list is ignored.
   # - secretName: mempalace-tls
   #   hosts:
   #     - mempalace.example.com
+  certManager:
+    enabled: false
+    # Set one of clusterIssuer or issuer when enabled.
+    clusterIssuer: ""
+    issuer: ""
+    issuerKind: ""
+    issuerGroup: ""
+    # Defaults to "<release fullname>-tls" when left empty.
+    secretName: ""
 
 # ── Resources ─────────────────────────────────────────────────────────────────
 resources:
@@ -112,9 +122,10 @@ config:
   palacePath: /data/palace
 
 # ── Authentication ────────────────────────────────────────────────────────────
-# When enabled, a Caddy sidecar is injected in front of mcp-proxy to enforce
-# Bearer token authentication on all incoming requests.  Caddy owns the named
-# "http" port (8080); mcp-proxy shifts to an internal port (8081).
+# When enabled, an unprivileged NGINX sidecar is injected in front of
+# mcp-proxy to enforce Bearer token authentication on all incoming requests.
+# NGINX owns the named "http" port (8080); mcp-proxy shifts to an internal
+# port (8081).
 #
 # Enable with a token:
 #   helm install mempalace . \
@@ -135,20 +146,21 @@ auth:
   existingSecret: ""
   # Key inside the Secret (or the chart-managed Secret) that holds the token.
   existingSecretKey: "token"
-  # Resources for the Caddy auth-proxy sidecar.
   proxy:
-    # The official Caddy image ships /usr/bin/caddy with file capabilities.
-    # With allowPrivilegeEscalation=false, some runtimes reject exec'ing that
-    # binary and the sidecar fails with:
-    #   exec /usr/bin/caddy: operation not permitted
+    image:
+      repository: nginxinc/nginx-unprivileged
+      tag: "stable-alpine"
+      pullPolicy: IfNotPresent
+    # This sidecar only listens on 8080, so it can stay fully unprivileged.
     securityContext:
-      allowPrivilegeEscalation: true
+      allowPrivilegeEscalation: false
       readOnlyRootFilesystem: false
       runAsNonRoot: true
       runAsUser: 1000
       capabilities:
         drop:
           - ALL
+    # Resources for the auth-proxy sidecar.
     resources:
       requests:
         cpu: 10m

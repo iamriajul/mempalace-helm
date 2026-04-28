@@ -7,26 +7,49 @@ metadata:
   labels:
     {{- include "mempalace.labels" . | nindent 4 }}
 data:
-  Caddyfile: |
-    {
-        # Disable the Caddy admin API — not needed for a sidecar proxy.
-        admin off
+  nginx.conf.template: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr info;
+
+    events {
+        worker_connections 1024;
     }
 
-    :8080 {
-        # {env.MEMPALACE_AUTH_TOKEN} is substituted by Caddy at startup.
-        @authed header Authorization "Bearer {env.MEMPALACE_AUTH_TOKEN}"
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        access_log /dev/stdout;
+        sendfile on;
+        keepalive_timeout 65;
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path /tmp/proxy_temp;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+        scgi_temp_path /tmp/scgi_temp;
 
-        handle @authed {
-            reverse_proxy localhost:8081 {
-                # Disable response buffering — required for SSE and Streamable HTTP.
-                flush_interval -1
-                header_up X-Real-IP        {remote_host}
-                header_up X-Forwarded-For  {remote_host}
-                header_up X-Forwarded-Proto {scheme}
+        server {
+            listen 8080;
+            server_name _;
+
+            location / {
+                if ($http_authorization != "Bearer __MEMPALACE_AUTH_TOKEN__") {
+                    return 401;
+                }
+
+                proxy_pass http://127.0.0.1:8081;
+                proxy_http_version 1.1;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_set_header Connection "";
+                proxy_buffering off;
+                proxy_request_buffering off;
+                proxy_read_timeout 3600;
+                proxy_send_timeout 3600;
+                add_header X-Accel-Buffering no always;
             }
         }
-
-        respond "Unauthorized" 401
     }
 {{- end }}

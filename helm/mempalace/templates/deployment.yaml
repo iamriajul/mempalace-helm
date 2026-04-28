@@ -41,7 +41,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- if .Values.auth.enabled }}
-          # When auth is enabled the Caddy sidecar owns port 8080 ("http").
+          # When auth is enabled the auth sidecar owns port 8080 ("http").
           # mcp-proxy is shifted to 8081 (pod-internal only).
           command:
             - mcp-proxy
@@ -100,9 +100,19 @@ spec:
               mountPath: /data
         {{- if .Values.auth.enabled }}
         - name: auth-proxy
-          image: caddy:alpine
+          image: {{ printf "%s:%s" .Values.auth.proxy.image.repository .Values.auth.proxy.image.tag | quote }}
+          imagePullPolicy: {{ .Values.auth.proxy.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.auth.proxy.securityContext | nindent 12 }}
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              mkdir -p /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp
+              sed "s|__MEMPALACE_AUTH_TOKEN__|${MEMPALACE_AUTH_TOKEN}|g" \
+                /etc/mempalace-proxy/nginx.conf.template > /tmp/nginx.conf
+              exec nginx -c /tmp/nginx.conf -g "daemon off;"
           ports:
             - name: http
               containerPort: 8080
@@ -128,9 +138,9 @@ spec:
           resources:
             {{- toYaml .Values.auth.proxy.resources | nindent 12 }}
           volumeMounts:
-            - name: caddy-config
-              mountPath: /etc/caddy/Caddyfile
-              subPath: Caddyfile
+            - name: proxy-config
+              mountPath: /etc/mempalace-proxy/nginx.conf.template
+              subPath: nginx.conf.template
         {{- end }}
       volumes:
         - name: data
@@ -141,7 +151,7 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- if .Values.auth.enabled }}
-        - name: caddy-config
+        - name: proxy-config
           configMap:
             name: {{ include "mempalace.fullname" . }}-proxy
         {{- end }}
