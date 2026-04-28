@@ -63,6 +63,7 @@ TLS secret:
 Configure coding agents (Streamable HTTP, recommended):
   npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp \
     --name mempalace \
+    --all \
     {{- if .Values.auth.enabled }}
     --header "Authorization: Bearer <your-token>" \
     {{- end }}
@@ -71,6 +72,7 @@ Configure coding agents (Streamable HTTP, recommended):
 Non-interactive install:
   npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp \
     --name mempalace \
+    --all \
     {{- if .Values.auth.enabled }}
     --header "Authorization: Bearer <your-token>" \
     {{- end }}
@@ -81,6 +83,7 @@ Legacy SSE fallback:
   npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse \
     --name mempalace \
     --transport sse \
+    --all \
     {{- if .Values.auth.enabled }}
     --header "Authorization: Bearer <your-token>" \
     {{- end }}

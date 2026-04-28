@@ -19,13 +19,14 @@ usage() {
 Usage:
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-    bash -s -- [--url <base-url>] [--transport http|sse] [--scope user|project] [--name mempalace] [--token <bearer-token>] [--no-prompt]
+    bash -s -- [--url <base-url>] [--transport http|sse] [--scope user|project] [--name mempalace] [--agent <agent>]... [--token <bearer-token>] [--no-prompt]
 
 Options:
   --url <base-url>         MemPalace base URL (falls back to SERVICE_URL env or interactive prompt)
   --transport <http|sse>   MCP transport (default: http)
   --scope <user|project>   MCP + hook config scope (`global`/`local` also accepted; default: user)
   --name <server-name>     MCP server name (default: mempalace)
+  --agent <agent>          Repeat to target specific agents; default is all compatible agents for the selected scope
   --token <bearer-token>   Optional bearer token for MCP Authorization header
   --no-prompt              Disable interactive prompts; fail if required values are missing
   -h, --help               Show this help text
@@ -43,6 +44,7 @@ URL=""
 TRANSPORT="http"
 SCOPE="user"
 SERVER_NAME="mempalace"
+AGENTS=()
 TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
 NO_PROMPT="false"
 
@@ -62,6 +64,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --name)
       SERVER_NAME="${2:-}"
+      shift 2
+      ;;
+    --agent)
+      AGENTS+=("${2:-}")
       shift 2
       ;;
     --token)
@@ -114,6 +120,11 @@ ok "Installed: $HOOK_DIR"
 info "Configuring MCP + hooks"
 ARGS=(--transport "$TRANSPORT" --scope "$SCOPE" --name "$SERVER_NAME")
 [ -n "$URL" ] && ARGS+=(--url "$URL")
+if [ "${#AGENTS[@]}" -gt 0 ]; then
+  for agent in "${AGENTS[@]}"; do
+    ARGS+=(--agent "$agent")
+  done
+fi
 [ -n "$TOKEN" ] && ARGS+=(--token "$TOKEN")
 [ "$NO_PROMPT" = "true" ] && ARGS+=(--no-prompt)
 "$HOOK_DIR/install.sh" "${ARGS[@]}"

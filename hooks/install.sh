@@ -11,14 +11,17 @@ err()  { echo -e "${RED}✗${NC} $*" >&2; }
 usage() {
   cat <<'USAGE'
 Usage:
-  hooks/install.sh [--url <base-url>] [--transport http|sse] [--name mempalace] [--scope user|project] [--token <bearer-token>] [--no-prompt]
+  hooks/install.sh [--url <base-url>] [--transport http|sse] [--name mempalace] [--scope user|project] [--agent <agent>]... [--token <bearer-token>] [--no-prompt]
 
 Examples:
   hooks/install.sh --url http://127.0.0.1:8080
   hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --scope project
   hooks/install.sh --url https://mempalace.example.com --scope user --token <bearer-token>
+  hooks/install.sh --url https://mempalace.example.com --scope project --agent claude-code --agent codex
 
 Notes:
+  If no --agent is provided, MCP is installed to all compatible agents for the selected scope.
+  Claude hooks are only written for Claude Code.
   --scope also accepts 'global' as an alias for 'user' and 'local' as an alias for 'project'.
 USAGE
 }
@@ -34,6 +37,7 @@ URL=""
 TRANSPORT="http"
 SERVER_NAME="mempalace"
 SCOPE="user"
+AGENTS=()
 TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
 PROMPT="true"
 
@@ -78,6 +82,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --scope)
       SCOPE="${2:-}"
+      shift 2
+      ;;
+    --agent)
+      AGENTS+=("${2:-}")
       shift 2
       ;;
     --token)
@@ -128,6 +136,14 @@ if [[ ! "$SERVER_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   err "--name may only contain letters, digits, dot, underscore, or hyphen"
   exit 1
 fi
+if [ "${#AGENTS[@]}" -gt 0 ]; then
+  for agent in "${AGENTS[@]}"; do
+    if [[ ! "$agent" =~ ^[A-Za-z0-9._-]+$ ]]; then
+      err "--agent may only contain letters, digits, dot, underscore, or hyphen"
+      exit 1
+    fi
+  done
+fi
 if printf '%s' "$TOKEN" | grep -q '[[:cntrl:]]'; then
   err "--token contains unsupported control characters"
   exit 1
@@ -161,6 +177,20 @@ fi
 need_cmd python3
 need_cmd npx
 
+# add-mcp currently produces mixed project/global writes with --all in project mode.
+# Keep project installs scoped by targeting only agents that support project config.
+PROJECT_COMPATIBLE_AGENTS=(
+  claude-code
+  codex
+  cursor
+  gemini-cli
+  github-copilot-cli
+  mcporter
+  opencode
+  vscode
+  zed
+)
+
 # Normalize URL: strip trailing slashes and explicit endpoint suffixes.
 URL="${URL%/}"
 URL="${URL%/mcp}"
@@ -191,6 +221,17 @@ chmod +x "$HOOK_DIR/mempal_save_hook.sh" "$HOOK_DIR/mempal_precompact_hook.sh"
 ok "Installed hooks to $HOOK_DIR"
 
 ADD_MCP_ARGS=("$FINAL_URL" --name "$SERVER_NAME" --transport "$TRANSPORT")
+if [ "${#AGENTS[@]}" -gt 0 ]; then
+  for agent in "${AGENTS[@]}"; do
+    ADD_MCP_ARGS+=(--agent "$agent")
+  done
+elif [ "$ADD_MCP_GLOBAL" = "true" ]; then
+  ADD_MCP_ARGS+=(--all)
+else
+  for agent in "${PROJECT_COMPATIBLE_AGENTS[@]}"; do
+    ADD_MCP_ARGS+=(--agent "$agent")
+  done
+fi
 if [ -n "$TOKEN" ]; then
   ADD_MCP_ARGS+=(--header "Authorization: Bearer $TOKEN")
 fi

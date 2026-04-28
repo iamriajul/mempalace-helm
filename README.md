@@ -46,7 +46,7 @@ MCP_BEARER_TOKEN="<YOUR_TOKEN>" curl -fsSL https://raw.githubusercontent.com/iam
   bash -s -- --url "${SERVICE_URL}" --transport http --scope user
 ```
 
-If `--url` is omitted, installer prompts for `SERVICE_URL`. MCP registration now uses `npx --yes add-mcp`, so agent machines need `npx` available. Restart your CLI after setup.
+If `--url` is omitted, installer prompts for `SERVICE_URL`. MCP registration now uses `npx --yes add-mcp`; by default it installs MemPalace into all compatible agents for the selected scope, while hooks are written only for Claude Code. Agent machines need `npx` available. Restart your CLI after setup.
 
 Need deeper details? Jump to [Technical reference](#technical-reference).
 
@@ -121,7 +121,7 @@ chmod +x ~/.mempalace/hooks/install.sh \
 ~/.mempalace/hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --transport http --scope user
 ```
 
-This installs MCP config via `add-mcp` into detected agent configs and writes Claude hook config to `~/.claude/settings.local.json` for `--scope user` (or `./.claude/settings.local.json` for `--scope project`).
+This installs MCP config via `add-mcp` into all compatible agent configs for the selected scope by default, and writes Claude hook config to `~/.claude/settings.local.json` for `--scope user` (or `./.claude/settings.local.json` for `--scope project`). For `--scope project`, the installer targets project-capable agents only so `add-mcp` does not spill into user-level config for global-only apps. Use repeated `--agent` flags to target a subset.
 
 ---
 
