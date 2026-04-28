@@ -19,12 +19,12 @@ usage() {
 Usage:
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-    bash -s -- [--url <base-url>] [--transport http|sse] [--scope global|project] [--name mempalace] [--token <bearer-token>] [--no-prompt]
+    bash -s -- [--url <base-url>] [--transport http|sse] [--scope user|project] [--name mempalace] [--token <bearer-token>] [--no-prompt]
 
 Options:
   --url <base-url>         MemPalace base URL (falls back to SERVICE_URL env or interactive prompt)
   --transport <http|sse>   MCP transport (default: http)
-  --scope <global|project> Hook settings target (default: global)
+  --scope <user|project>   MCP + hook config scope (`global`/`local` also accepted; default: user)
   --name <server-name>     MCP server name (default: mempalace)
   --token <bearer-token>   Optional bearer token for MCP Authorization header
   --no-prompt              Disable interactive prompts; fail if required values are missing
@@ -41,7 +41,7 @@ need_cmd() {
 
 URL=""
 TRANSPORT="http"
-SCOPE="global"
+SCOPE="user"
 SERVER_NAME="mempalace"
 TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
 NO_PROMPT="false"
@@ -120,4 +120,4 @@ ARGS=(--transport "$TRANSPORT" --scope "$SCOPE" --name "$SERVER_NAME")
 ok "Setup complete"
 
 echo "Run again anytime:"
-echo "  ~/.mempalace/hooks/install.sh --url http://<your-mempalace-host> --transport http --scope global"
+echo "  ~/.mempalace/hooks/install.sh --url http://<your-mempalace-host> --transport http --scope user"

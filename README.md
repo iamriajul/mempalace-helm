@@ -36,17 +36,17 @@ SERVICE_URL="http://mempalace.mempalace.svc.cluster.local"
 
 # Install + configure MCP + hooks
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope user
 ```
 
 Optional bearer token:
 
 ```bash
 MCP_BEARER_TOKEN="<YOUR_TOKEN>" curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-  bash -s -- --url "${SERVICE_URL}" --transport http --scope global
+  bash -s -- --url "${SERVICE_URL}" --transport http --scope user
 ```
 
-If `--url` is omitted, installer prompts for `SERVICE_URL`. Restart your CLI after setup.
+If `--url` is omitted, installer prompts for `SERVICE_URL`. MCP registration now uses `npx --yes add-mcp`, so agent machines need `npx` available. Restart your CLI after setup.
 
 Need deeper details? Jump to [Technical reference](#technical-reference).
 
@@ -67,7 +67,7 @@ docker run -d \
 Then register MCP + hooks (headless-safe):
 
 ```bash
-~/.mempalace/hooks/install.sh --url http://127.0.0.1:8080 --transport http --scope global
+~/.mempalace/hooks/install.sh --url http://127.0.0.1:8080 --transport http --scope user
 ```
 
 Data is persisted in the `mempalace-data` Docker volume across container restarts.
@@ -100,7 +100,7 @@ Then run full headless setup directly:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/iamriajul/mempalace-helm/master/install.sh | \
-  bash -s -- --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
+  bash -s -- --url http://mempalace.mempalace.svc.cluster.local --transport http --scope user
 ```
 
 ### Manual setup
@@ -118,10 +118,10 @@ curl -fsSL -o ~/.mempalace/hooks/mempal_precompact_hook.sh \
 chmod +x ~/.mempalace/hooks/install.sh \
          ~/.mempalace/hooks/mempal_save_hook.sh \
          ~/.mempalace/hooks/mempal_precompact_hook.sh
-~/.mempalace/hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --transport http --scope global
+~/.mempalace/hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --transport http --scope user
 ```
 
-This writes MCP config to `~/.claude.json` and hook config to `~/.claude/settings.local.json`.
+This installs MCP config via `add-mcp` into detected agent configs and writes Claude hook config to `~/.claude/settings.local.json` for `--scope user` (or `./.claude/settings.local.json` for `--scope project`).
 
 ---
 

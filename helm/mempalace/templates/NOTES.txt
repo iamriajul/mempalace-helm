@@ -60,19 +60,31 @@ TLS secret:
   {{ default (printf "%s-tls" (include "mempalace.fullname" .)) .Values.ingress.certManager.secretName }}
 
 {{- end }}
-Configure Claude Code (Streamable HTTP, recommended):
-  claude mcp add mempalace --transport http \
+Configure coding agents (Streamable HTTP, recommended):
+  npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp \
+    --name mempalace \
     {{- if .Values.auth.enabled }}
     --header "Authorization: Bearer <your-token>" \
     {{- end }}
-    http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp
+    --global
+
+Non-interactive install:
+  npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/mcp \
+    --name mempalace \
+    {{- if .Values.auth.enabled }}
+    --header "Authorization: Bearer <your-token>" \
+    {{- end }}
+    --global \
+    --yes
 
 Legacy SSE fallback:
-  claude mcp add mempalace --transport sse \
+  npx --yes add-mcp http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse \
+    --name mempalace \
+    --transport sse \
     {{- if .Values.auth.enabled }}
     --header "Authorization: Bearer <your-token>" \
     {{- end }}
-    http://{{ include "mempalace.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local/sse
+    --global
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Storage

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install MemPalace auto-save hooks and register remote MCP without Claude CLI commands.
+# Install MemPalace auto-save hooks and register remote MCP via add-mcp.
 
 set -euo pipefail
 
@@ -11,11 +11,15 @@ err()  { echo -e "${RED}✗${NC} $*" >&2; }
 usage() {
   cat <<'USAGE'
 Usage:
-  hooks/install.sh [--url <base-url>] [--transport http|sse] [--name mempalace] [--scope global|project] [--token <bearer-token>] [--no-prompt]
+  hooks/install.sh [--url <base-url>] [--transport http|sse] [--name mempalace] [--scope user|project] [--token <bearer-token>] [--no-prompt]
 
 Examples:
   hooks/install.sh --url http://127.0.0.1:8080
   hooks/install.sh --url http://mempalace.mempalace.svc.cluster.local --scope project
+  hooks/install.sh --url https://mempalace.example.com --scope user --token <bearer-token>
+
+Notes:
+  --scope also accepts 'global' as an alias for 'user' and 'local' as an alias for 'project'.
 USAGE
 }
 
@@ -29,7 +33,7 @@ need_cmd() {
 URL=""
 TRANSPORT="http"
 SERVER_NAME="mempalace"
-SCOPE="global"
+SCOPE="user"
 TOKEN="${MCP_BEARER_TOKEN:-${BEARER_TOKEN:-}}"
 PROMPT="true"
 
@@ -116,10 +120,6 @@ if [ "$TRANSPORT" != "http" ] && [ "$TRANSPORT" != "sse" ]; then
   err "--transport must be 'http' or 'sse'"
   exit 1
 fi
-if [ "$SCOPE" != "global" ] && [ "$SCOPE" != "project" ]; then
-  err "--scope must be 'global' or 'project'"
-  exit 1
-fi
 if [[ ! "$URL" =~ ^https?:// ]]; then
   err "--url must start with http:// or https://"
   exit 1
@@ -133,6 +133,22 @@ if printf '%s' "$TOKEN" | grep -q '[[:cntrl:]]'; then
   exit 1
 fi
 
+ADD_MCP_GLOBAL="false"
+HOOK_SCOPE="project"
+case "$SCOPE" in
+  user|global)
+    ADD_MCP_GLOBAL="true"
+    HOOK_SCOPE="user"
+    ;;
+  project|local)
+    HOOK_SCOPE="project"
+    ;;
+  *)
+    err "--scope must be 'user', 'project', 'global', or 'local'"
+    exit 1
+    ;;
+esac
+
 if [ -z "$TOKEN" ] && can_prompt; then
   USE_TOKEN="$(prompt_line 'Use bearer token auth? [y/N]: ' || true)"
   case "${USE_TOKEN:-}" in
@@ -143,6 +159,7 @@ if [ -z "$TOKEN" ] && can_prompt; then
 fi
 
 need_cmd python3
+need_cmd npx
 
 # Normalize URL: strip trailing slashes and explicit endpoint suffixes.
 URL="${URL%/}"
@@ -173,35 +190,42 @@ fi
 chmod +x "$HOOK_DIR/mempal_save_hook.sh" "$HOOK_DIR/mempal_precompact_hook.sh"
 ok "Installed hooks to $HOOK_DIR"
 
-if [ "$SCOPE" = "project" ]; then
+ADD_MCP_ARGS=("$FINAL_URL" --name "$SERVER_NAME" --transport "$TRANSPORT")
+if [ -n "$TOKEN" ]; then
+  ADD_MCP_ARGS+=(--header "Authorization: Bearer $TOKEN")
+fi
+if [ "$ADD_MCP_GLOBAL" = "true" ]; then
+  ADD_MCP_ARGS+=(--global)
+fi
+if ! can_prompt; then
+  ADD_MCP_ARGS+=(--yes)
+fi
+
+info "Registering MCP server via add-mcp"
+npx --yes add-mcp "${ADD_MCP_ARGS[@]}"
+ok "Configured MCP server '${SERVER_NAME}' -> ${FINAL_URL}"
+
+if [ "$HOOK_SCOPE" = "project" ]; then
   SETTINGS_PATH="$(pwd)/.claude/settings.local.json"
 else
   SETTINGS_PATH="$HOME/.claude/settings.local.json"
 fi
-CLAUDE_CONFIG="$HOME/.claude.json"
 
 mkdir -p "$(dirname "$SETTINGS_PATH")"
-mkdir -p "$(dirname "$CLAUDE_CONFIG")"
 
 SAVE_HOOK="$HOOK_DIR/mempal_save_hook.sh"
 PRECOMPACT_HOOK="$HOOK_DIR/mempal_precompact_hook.sh"
 
-info "Writing MCP server to ${CLAUDE_CONFIG}"
-info "Writing hooks to ${SETTINGS_PATH}"
+info "Writing Claude hooks to ${SETTINGS_PATH}"
 
-python3 - "$CLAUDE_CONFIG" "$SETTINGS_PATH" "$SERVER_NAME" "$TRANSPORT" "$FINAL_URL" "$SAVE_HOOK" "$PRECOMPACT_HOOK" "$TOKEN" <<'PYEOF'
+python3 - "$SETTINGS_PATH" "$SAVE_HOOK" "$PRECOMPACT_HOOK" <<'PYEOF'
 import json
 import os
 import sys
 
-claude_cfg_path = sys.argv[1]
-settings_path = sys.argv[2]
-server_name = sys.argv[3]
-transport = sys.argv[4]
-url = sys.argv[5]
-save_hook = sys.argv[6]
-precompact_hook = sys.argv[7]
-token = sys.argv[8]
+settings_path = sys.argv[1]
+save_hook = sys.argv[2]
+precompact_hook = sys.argv[3]
 
 
 def load_json(path: str):
@@ -238,35 +262,16 @@ def ensure_hook(hooks_cfg: dict, event: str, command: str):
     })
 
 
-claude_cfg = load_json(claude_cfg_path)
-servers = claude_cfg.setdefault("mcpServers", {})
-current = servers.get(server_name, {})
-if not isinstance(current, dict):
-    current = {}
-server_cfg = dict(current)
-server_cfg["type"] = transport
-server_cfg["url"] = url
-if token:
-    headers = server_cfg.get("headers", {})
-    if not isinstance(headers, dict):
-        headers = {}
-    headers["Authorization"] = f"Bearer {token}"
-    server_cfg["headers"] = headers
-servers[server_name] = server_cfg
-dump_json(claude_cfg_path, claude_cfg)
-
 settings = load_json(settings_path)
 hooks = settings.setdefault("hooks", {})
 ensure_hook(hooks, "Stop", save_hook)
 ensure_hook(hooks, "PreCompact", precompact_hook)
 dump_json(settings_path, settings)
 
-print(f"configured_mcp={url}")
 print(f"configured_hooks={settings_path}")
 PYEOF
 
-ok "Configured MCP server '${SERVER_NAME}' -> ${FINAL_URL}"
 ok "Configured Stop + PreCompact hooks"
 
 echo ""
-echo "Restart Claude Code to load updated MCP + hook settings."
+echo "Restart Claude Code and any other MCP-enabled agents to load updated configuration."
