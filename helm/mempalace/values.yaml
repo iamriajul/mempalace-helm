@@ -137,6 +137,18 @@ auth:
   existingSecretKey: "token"
   # Resources for the Caddy auth-proxy sidecar.
   proxy:
+    # The official Caddy image ships /usr/bin/caddy with file capabilities.
+    # With allowPrivilegeEscalation=false, some runtimes reject exec'ing that
+    # binary and the sidecar fails with:
+    #   exec /usr/bin/caddy: operation not permitted
+    securityContext:
+      allowPrivilegeEscalation: true
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      runAsUser: 1000
+      capabilities:
+        drop:
+          - ALL
     resources:
       requests:
         cpu: 10m
